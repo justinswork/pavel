@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Logs
+*.log
+
+# Env / secrets (keep an .env.example tracked)
+.env
+.env.*
+!.env.example
+
+# Test / coverage output
+coverage/
+
+# Editor / local tooling
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db
