@@ -131,7 +131,7 @@ sequenceDiagram
     S-->>P: protected content
 ```
 
-Note the two roles the middleware plays: (1) the **request/verify endpoints** that run the ceremony, and (2) the **`requireAgeProof` gate** that simply checks the resulting session flag on later requests. They are decoupled so the ceremony can happen once and gate many routes.
+Note the two roles the middleware plays: (1) the **request/verify endpoints** that run the ceremony, and (2) the **`requireAgeProof` gate** that simply checks the resulting session flag on later requests. They are decoupled so the ceremony can happen once and gate many routes. (A gate can opt out of this caching with `forceReverify` to demand a fresh proof per action — see [§8](#8-public-api-design).)
 
 ---
 
@@ -261,9 +261,14 @@ app.use(pavel({
 app.post("/premium-content", requireAgeProof({ minAge: 21 }), (req, res) => {
   res.send("Access granted — age verified, no personal data received.");
 });
+
+// 3. Or require a fresh proof for *every* gated action (see "Verification lifetime")
+app.post("/checkout", requireAgeProof({ minAge: 21, forceReverify: true }), placeOrder);
 ```
 
 `requireAgeProof({ minAge })` checks the session flag; if absent it responds `401` with a machine-readable hint (`{ error: "age_verification_required", requestUrl: "/pavel/request?minAge=21" }`) that the SDK uses to kick off the ceremony. This keeps gating declarative and the ceremony lazy.
+
+**Verification lifetime.** By default a successful ceremony sets a session flag that satisfies later gates for the life of the session (*ceremony once → gate many*, [§4](#4-end-to-end-flow)). Some relying parties must instead re-verify on **every** gated action, regardless of a recent prior verification (per-transaction compliance postures). `forceReverify: true` makes the proof **one-shot**: it authorizes exactly the action it gates and is consumed once that action completes successfully, so the next gated request re-runs the ceremony. Default is `false`. A bounded-freshness middle ground — accept a proof issued within the last *N* minutes rather than all-or-nothing — is a planned `maxAge` option ([§14](#14-open-questions--risks)).
 
 ### Browser (`zk-age.js`)
 
@@ -394,6 +399,7 @@ Registration as an approved relying party (production CSR, review) is required o
 | 3 | **Protocol drift** — `openid4vp` vs `org-iso-mdoc`, response-mode encryption, DCQL revisions. | Chrome and Safari differ today; specs still moving. | Maintain a compatibility matrix; normalize both protocol strings in `-core`. |
 | 4 | **`age_over_NN` availability** varies by issuer. | Requested predicate may not exist in a given credential. | Distinct `predicate_unavailable` outcome; never fall back to DOB. |
 | 5 | **Longfellow-ZK maturity** (C++, in security review, WASM binding cost). | Stretch objective feasibility. | Isolated behind the `-core` verifier interface; core deliverables don't depend on it. |
+| 6 | **Verification lifetime / freshness** — how long a proof gates for: per-session vs. per-action. | Some relying parties must re-verify at every transaction; others cache for the session. Neither should be hard-coded. | Default verify-once-per-session; `forceReverify` opt-in for one-shot per-action gating ([§8](#8-public-api-design)). Bounded-freshness `maxAge` window is a planned middle ground. |
 
 ---
 
