@@ -1,0 +1,12 @@
+{
+  "name": "pavel",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PAVEL monorepo — privacy-first age verification & eligibility gateway.",
+  "packageManager": "pnpm@11.17.0",
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm --filter pavel-demo dev"
+  }
+}

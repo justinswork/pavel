@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cellar &amp; Co. — PAVEL Demo Store</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="mock-banner">
+      🔒 <strong>PAVEL testbed</strong> — age checks use a <em>mock</em> wallet &amp; verifier. No real credentials.
+    </div>
+
+    <header class="site-header">
+      <div class="brand">🛒 Cellar &amp; Co.</div>
+      <div id="verify-badge" class="badge badge-unverified">Not age-verified</div>
+    </header>
+
+    <main class="layout">
+      <section class="catalog">
+        <h1>Shop</h1>
+        <p class="lede">Add items to your cart. Anything marked <span class="pill pill-21">21+</span> triggers the PAVEL age gate at checkout.</p>
+        <div id="product-grid" class="product-grid"></div>
+      </section>
+
+      <aside class="cart" aria-label="Cart">
+        <h2>Cart</h2>
+        <div id="cart-items" class="cart-items"></div>
+        <div class="cart-footer">
+          <div class="cart-total"><span>Total</span><strong id="cart-total">$0.00</strong></div>
+          <label class="reverify-toggle" title="Simulates a store whose policy requires a fresh proof for every purchase (forceReverify).">
+            <input type="checkbox" id="reverify-toggle" />
+            Re-verify age at every checkout
+          </label>
+          <button id="checkout-btn" class="btn btn-primary" disabled>Checkout</button>
+          <button id="clear-btn" class="btn btn-ghost">Clear cart</button>
+          <p id="checkout-msg" class="checkout-msg" role="status"></p>
+        </div>
+      </aside>
+    </main>
+
+    <script src="/zk-age.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
