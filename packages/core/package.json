@@ -1,0 +1,17 @@
+{
+  "name": "@justinswork/pavel-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-agnostic PAVEL logic: OpenID4VP/DCQL request building + the mdoc verification pipeline (ARCHITECTURE.md §5, §7).",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.8"
+  }
+}
