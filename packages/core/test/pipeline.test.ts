@@ -63,3 +63,56 @@ describe('verifyPresentation — predicate outcomes', () => {
     });
   });
 });
+
+describe('verifyPresentation — reject inauthentic or untrusted presentations', () => {
+  it('malformed when decode throws', () => {
+    const backend = fakeBackend({
+      decode: () => {
+        throw new Error('bad cbor');
+      },
+    });
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('malformed');
+  });
+
+  it('malformed when the docType is not an mDL', () => {
+    const backend = fakeBackend({}, validDoc({ docType: 'org.iso.23220.photoID' }));
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('malformed');
+  });
+
+  it('untrusted_issuer when the cert does not chain to a trusted IACA', () => {
+    const backend = fakeBackend({ chainsToTrustedIaca: () => false });
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('untrusted_issuer');
+  });
+
+  it('malformed when the issuer signature is invalid (tampered)', () => {
+    const backend = fakeBackend({ issuerAuthValid: () => false });
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('malformed');
+  });
+});
+
+describe('verifyPresentation — reject stale, unbound or content-tampered presentations', () => {
+  it('expired when now is past validUntil', () => {
+    const backend = fakeBackend({}, validDoc({ validity: { validFrom: NOW - 2000, validUntil: NOW - 1000, signed: NOW - 2000 } }));
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('expired');
+  });
+
+  it('expired when now is before validFrom (not yet valid)', () => {
+    const backend = fakeBackend({}, validDoc({ validity: { validFrom: NOW + 1000, validUntil: NOW + 2000, signed: NOW } }));
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('expired');
+  });
+
+  it('malformed when holder binding (deviceAuth) fails', () => {
+    const backend = fakeBackend({ deviceAuthValid: () => false });
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('malformed');
+  });
+
+  it('replay when the SessionTranscript does not bind our nonce/origin', () => {
+    const backend = fakeBackend({ sessionTranscriptBinds: () => false });
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('replay');
+  });
+
+  it('malformed when a disclosed digest does not match valueDigests', () => {
+    const backend = fakeBackend({ digestsMatch: () => false });
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('malformed');
+  });
+});
