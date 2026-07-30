@@ -116,3 +116,18 @@ describe('verifyPresentation — reject stale, unbound or content-tampered prese
     expect(verifyPresentation('tok', ctx, backend).outcome).toBe('malformed');
   });
 });
+
+describe('verifyPresentation — check ordering (fails closed at the first failing step)', () => {
+  it('reports untrusted_issuer before expired (trust chain precedes validity)', () => {
+    const backend = fakeBackend(
+      { chainsToTrustedIaca: () => false },
+      validDoc({ validity: { validFrom: NOW - 2000, validUntil: NOW - 1000, signed: NOW - 2000 } }),
+    );
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('untrusted_issuer');
+  });
+
+  it('reports replay before predicate (freshness precedes the predicate check)', () => {
+    const backend = fakeBackend({ sessionTranscriptBinds: () => false }, validDoc({ ageClaims: { age_over_21: false } }));
+    expect(verifyPresentation('tok', ctx, backend).outcome).toBe('replay');
+  });
+});
