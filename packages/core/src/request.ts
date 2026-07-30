@@ -23,6 +23,8 @@ export function agePredicate(minAge: number): string {
 export function buildAgeRequest(params: BuildAgeRequestParams): AuthorizationRequest {
   const { minAge, nonce, origin, responseMode = 'dc_api', clientName } = params;
   assertValidMinAge(minAge);
+  if (!nonce) throw new Error('nonce is required');
+  if (!origin) throw new Error('origin is required');
 
   return {
     response_type: 'vp_token',

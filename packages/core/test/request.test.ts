@@ -7,6 +7,10 @@ describe('agePredicate', () => {
     expect(agePredicate(21)).toBe('age_over_21');
     expect(agePredicate(18)).toBe('age_over_18');
   });
+
+  it.each([0, -1, 1.5, 200, NaN, Infinity])('rejects invalid minAge %s', (bad) => {
+    expect(() => agePredicate(bad as number)).toThrow(RangeError);
+  });
 });
 
 describe('buildAgeRequest', () => {
@@ -28,9 +32,28 @@ describe('buildAgeRequest', () => {
     expect(cred.claims).toEqual([{ path: [MDL_NAMESPACE, 'age_over_21'] }]);
   });
 
+  it('is data-minimal: never requests DOB or any non-predicate claim', () => {
+    const serialized = JSON.stringify(buildAgeRequest(base));
+    expect(serialized).not.toMatch(/birth_date/i);
+    expect(serialized).not.toMatch(/portrait|family_name|given_name|address/i);
+    // exactly one claim, and it is an age predicate
+    const claims = buildAgeRequest(base).dcql_query.credentials[0]!.claims;
+    expect(claims).toHaveLength(1);
+    expect(claims[0]!.path.at(-1)).toMatch(/^age_over_\d+$/);
+  });
+
+  it('honors an encrypted response mode', () => {
+    expect(buildAgeRequest({ ...base, responseMode: 'dc_api.jwt' }).response_mode).toBe('dc_api.jwt');
+  });
+
   it('surfaces the verifier display name and origin in client_metadata', () => {
     const req = buildAgeRequest({ ...base, clientName: 'Cellar & Co.' });
     expect(req.client_metadata.client_name).toBe('Cellar & Co.');
     expect(req.client_metadata.expected_origin).toBe('https://shop.example');
+  });
+
+  it('requires a nonce and an origin', () => {
+    expect(() => buildAgeRequest({ ...base, nonce: '' })).toThrow(/nonce/);
+    expect(() => buildAgeRequest({ ...base, origin: '' })).toThrow(/origin/);
   });
 });
