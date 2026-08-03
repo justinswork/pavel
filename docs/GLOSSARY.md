@@ -55,6 +55,6 @@ Domain terms used across [ARCHITECTURE.md](ARCHITECTURE.md) and the codebase, ro
 - **`requireAgeProof({ minAge })`** — the Express middleware that gates a route on the session's verified flag.
 - **The ceremony** — the `GET /pavel/request` → `navigator.credentials.get()` → `POST /pavel/verify` round-trip that establishes the flag.
 - **`pavel-core`** — framework-agnostic package: request building + verification pipeline.
-- **`pavel-authority`** — test-only tool that plays mock IACA + issuer, minting mDLs for the emulator and exporting the trust anchor.
+- **`pavel-mock-authority`** — test-only (publishable) tool that plays mock IACA + issuer, minting mDLs for the emulator and exporting the trust anchor; consumers use it to test their PAVEL integration offline.
 - **CMWallet** — Google's open-source sample wallet app used in the Android emulator to hold the mock mDL during testing.
 - **Verification outcomes** — `verified` | `predicate_false` | `predicate_unavailable` | `untrusted_issuer` | `expired` | `replay` | `malformed`.
