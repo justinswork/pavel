@@ -1,0 +1,23 @@
+{
+  "name": "@justinswork/pavel-mock-authority",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Test-only mock authority: generates an IACA + document signer, issues mock mDLs, and exports the trust anchor. Basis of the golden-vector fixtures.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@auth0/mdl": "^3.0.1",
+    "@peculiar/x509": "^2.0.0",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "jose": "^6.2.7",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.8"
+  }
+}
