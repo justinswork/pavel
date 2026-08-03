@@ -34,6 +34,10 @@ importers:
         version: 5.9.3
 
   packages/core:
+    dependencies:
+      '@auth0/mdl':
+        specifier: ^3.0.1
+        version: 3.0.1
     devDependencies:
       '@types/node':
         specifier: ^24.0.0
@@ -50,6 +54,9 @@ importers:
       '@auth0/mdl':
         specifier: ^3.0.1
         version: 3.0.1
+      '@justinswork/pavel-core':
+        specifier: workspace:*
+        version: link:../core
       '@peculiar/x509':
         specifier: ^2.0.0
         version: 2.0.0

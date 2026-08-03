@@ -5,3 +5,4 @@ export * from './request';
 export * from './protocol';
 export * from './backend';
 export * from './pipeline';
+export * from './session-transcript';
