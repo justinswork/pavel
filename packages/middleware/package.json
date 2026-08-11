@@ -1,0 +1,33 @@
+{
+  "name": "@justinswork/pavel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Express middleware for PAVEL: the age-verification ceremony endpoints + requireAgeProof gate, wrapping @justinswork/pavel-core.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@justinswork/pavel-core": "workspace:*",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@justinswork/pavel-mock-authority": "workspace:*",
+    "@types/express": "^4.17.21",
+    "@types/express-session": "^1.18.0",
+    "@types/node": "^24.0.0",
+    "@types/supertest": "^6.0.2",
+    "express-session": "^1.18.0",
+    "supertest": "^7.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.8"
+  }
+}
