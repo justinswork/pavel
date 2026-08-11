@@ -41,6 +41,7 @@
 - **Not** a production relying-party onboarding tool. Registration with Google/Apple (production CSR, review) is out of scope; PAVEL targets the sandbox + mock-authority path.
 - **Not** full zero-knowledge unlinkability in v1. Longfellow-ZK integration is a fenced stretch objective (see [§10.4](#104-known-limitation-linkability)).
 - **Not** an identity/session framework. PAVEL grants a verified eligibility fact; the host app owns its own login/session semantics (PAVEL integrates with them).
+- **Not** an under-18 / minor age-assurance tool. PAVEL verifies *adult* eligibility from a **mobile driver's license** — a credential minors typically don't hold. It reliably keeps minors *out* of adult content by failing closed (no valid `age_over_NN` proof → no access), but it cannot *positively* verify that a user is a minor (e.g. "is at least 13"): there is no credential to read. Broad, minor-aware age assurance via declared-age or account/family signals — as in platform approaches like Google Play's Age Signals — is a different problem with a weaker, non-cryptographic trust model, and is out of scope. *(If an issuer offers minors a suitable mdoc, `-core`'s `docType` is configurable — but that ecosystem is nascent.)*
 
 ---
 
