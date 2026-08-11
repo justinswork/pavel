@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Test-only mock authority: generates an IACA + document signer, issues mock mDLs, and exports the trust anchor. Basis of the golden-vector fixtures.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
