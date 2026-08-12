@@ -10,7 +10,7 @@ import { Router } from 'express';
 import {
   buildAgeRequest,
   verifyPresentation,
-  createAuth0MdocBackend,
+  createOwfMdocBackend,
 } from '@justinswork/pavel-core';
 import type { PavelOptions } from './types';
 
@@ -26,7 +26,7 @@ function parseMinAge(raw: unknown): number | null {
 export function pavel(options: PavelOptions): Router {
   const { origin, trustAnchors, clientName } = options;
   const nonceTtlMs = options.nonceTtlMs ?? DEFAULT_NONCE_TTL_MS;
-  const backend = createAuth0MdocBackend({ trustAnchors });
+  const backend = createOwfMdocBackend({ trustAnchors });
   const router = Router();
 
   // GET /pavel/request?minAge=NN — mint a single-use nonce, return the request.

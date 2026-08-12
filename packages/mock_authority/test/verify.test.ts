@@ -1,32 +1,29 @@
 /**
  * End-to-end: mint (MockAuthority) → present (MockWallet) → verify through the
- * real pavel-core @auth0/mdl backend. This exercises real CBOR/COSE/PKI and the
+ * real pavel-core @owf/mdoc backend. This exercises real CBOR/COSE/PKI and the
  * outcome mapping together. It lives here because mock_authority already depends
  * on pavel-core (no dependency cycle).
  */
 import { describe, it, expect } from 'vitest';
 import { MockAuthority, MockWallet } from '../src/index';
-import { createAuth0MdocBackend, verifyPresentation } from '@justinswork/pavel-core';
+import { createOwfMdocBackend, verifyPresentation } from '@justinswork/pavel-core';
 
 const ORIGIN = 'https://shop.example';
 const NONCE = 'server-minted-nonce-abc';
 const YEAR_MS = 365 * 24 * 3600 * 1000;
 
-const b64url = (bytes: Uint8Array) =>
-  Buffer.from(bytes).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
 async function present(
   wallet: MockWallet,
   disclose: string[] = ['age_over_21'],
 ): Promise<string> {
-  return b64url(await wallet.present({ nonce: NONCE, origin: ORIGIN, disclose }));
+  return wallet.present({ nonce: NONCE, origin: ORIGIN, disclose });
 }
 
-describe('pavel-core @auth0/mdl backend verifies mock_authority presentations', () => {
+describe('pavel-core @owf/mdoc backend verifies mock_authority presentations', () => {
   it('verified for a valid over-21 presentation', async () => {
     const authority = await MockAuthority.create();
     const wallet = new MockWallet(await authority.issueMdl({ ageOver: [18, 21] }));
-    const backend = createAuth0MdocBackend({ trustAnchors: [authority.trustAnchor] });
+    const backend = createOwfMdocBackend({ trustAnchors: [authority.trustAnchor] });
 
     const result = await verifyPresentation(
       await present(wallet),
@@ -40,7 +37,7 @@ describe('pavel-core @auth0/mdl backend verifies mock_authority presentations', 
     const evil = await MockAuthority.create();
     const good = await MockAuthority.create();
     const wallet = new MockWallet(await evil.issueMdl());
-    const backend = createAuth0MdocBackend({ trustAnchors: [good.trustAnchor] });
+    const backend = createOwfMdocBackend({ trustAnchors: [good.trustAnchor] });
 
     const result = await verifyPresentation(
       await present(wallet),
@@ -53,7 +50,7 @@ describe('pavel-core @auth0/mdl backend verifies mock_authority presentations', 
   it('replay for a presentation checked against a different origin', async () => {
     const authority = await MockAuthority.create();
     const wallet = new MockWallet(await authority.issueMdl());
-    const backend = createAuth0MdocBackend({ trustAnchors: [authority.trustAnchor] });
+    const backend = createOwfMdocBackend({ trustAnchors: [authority.trustAnchor] });
 
     const result = await verifyPresentation(
       await present(wallet),
@@ -71,7 +68,7 @@ describe('pavel-core @auth0/mdl backend verifies mock_authority presentations', 
         validUntil: new Date(Date.now() - YEAR_MS),
       }),
     );
-    const backend = createAuth0MdocBackend({ trustAnchors: [authority.trustAnchor] });
+    const backend = createOwfMdocBackend({ trustAnchors: [authority.trustAnchor] });
 
     const result = await verifyPresentation(
       await present(wallet),

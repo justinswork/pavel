@@ -3,7 +3,7 @@
  *
  * A backend does the crypto-heavy verification in one call and returns a neutral
  * RawVerification; verifyPresentation (pipeline.ts) maps that to the public
- * outcome enum. The real backend wraps @auth0/mdl (backend-auth0.ts); the mapping
+ * outcome enum. The real backend wraps @owf/mdoc (backend-owf.ts); the mapping
  * is unit-tested against hand-built RawVerification values.
  */
 import type { VerifyContext } from './types';
@@ -24,7 +24,7 @@ export interface RawVerification {
   /** MSO validity window covers verification time. false → expired. */
   withinValidity: boolean;
   /**
-   * deviceAuth over the session transcript verifies. @auth0/mdl merges holder
+   * deviceAuth over the session transcript verifies. @owf/mdoc merges holder
    * binding and freshness/audience into this one verdict, so false → replay.
    */
   deviceBound: boolean;

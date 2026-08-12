@@ -2,16 +2,19 @@
  * MockAuthority — a test-only issuing authority.
  *
  * Generates an IACA root and a document-signer (DS) certificate issued under it,
- * then signs mock mDLs with the DS key. The IACA cert is the trust anchor a
- * verifier is configured with. No real DMV or network is involved.
+ * then signs mock mDLs with the DS key via @owf/mdoc's Issuer (using pavel-core's
+ * MdocContext). The IACA cert is the trust anchor a verifier is configured with.
+ * No real DMV or network is involved.
  */
 import 'reflect-metadata'; // required by @peculiar/x509's tsyringe dependency
+import { webcrypto } from 'node:crypto';
 import * as x509 from '@peculiar/x509';
-import { Document, MDoc } from '@auth0/mdl';
-import type { JWK } from 'jose';
+import { Issuer, CoseKey, DeviceKey, SignatureAlgorithm, type IssuerSigned } from '@owf/mdoc';
+import { mdocContext } from '@justinswork/pavel-core';
 
-const webcrypto = globalThis.crypto;
-x509.cryptoProvider.set(webcrypto as unknown as Crypto);
+type CryptoKey = webcrypto.CryptoKey;
+
+x509.cryptoProvider.set(webcrypto as unknown as Parameters<typeof x509.cryptoProvider.set>[0]);
 
 const EC_P256 = { name: 'ECDSA', namedCurve: 'P-256' } as const;
 const ES256 = { name: 'ECDSA', hash: 'SHA-256' } as const;
@@ -19,9 +22,13 @@ const MDL_DOCTYPE = 'org.iso.18013.5.1.mDL';
 const MDL_NAMESPACE = 'org.iso.18013.5.1';
 const YEAR_MS = 365 * 24 * 3600 * 1000;
 
-const genKey = () => webcrypto.subtle.generateKey(EC_P256, true, ['sign', 'verify']);
-const jwk = async (k: CryptoKey): Promise<JWK> =>
-  (await webcrypto.subtle.exportKey('jwk', k)) as unknown as JWK;
+const genKey = (): Promise<webcrypto.CryptoKeyPair> =>
+  webcrypto.subtle.generateKey(EC_P256, true, ['sign', 'verify']) as Promise<webcrypto.CryptoKeyPair>;
+// WebCrypto omits `alg` on exported EC JWKs; CoseKey.fromJwk needs it to set the alg header.
+const coseKey = async (k: CryptoKey): Promise<CoseKey> =>
+  CoseKey.fromJwk({ ...(await webcrypto.subtle.exportKey('jwk', k)), alg: 'ES256' } as Record<string, unknown>);
+const deviceKey = async (k: CryptoKey): Promise<DeviceKey> =>
+  DeviceKey.fromJwk({ ...(await webcrypto.subtle.exportKey('jwk', k)), alg: 'ES256' } as Record<string, unknown>);
 
 export interface MockAuthorityOptions {
   /** ISO 3166 country code baked into the certs and the mDL. Default 'US'. */
@@ -42,18 +49,17 @@ export interface IssueMdlOptions {
 
 /** A minted, issuer-signed mDL plus the device key it is bound to. */
 export interface IssuedMdl {
-  /** CBOR-encoded issuer-signed mdoc — the credential loaded into a wallet. */
-  issuerSigned: Uint8Array;
+  /** The issuer-signed mdoc — the credential loaded into a wallet. */
+  issuerSigned: IssuerSigned;
   /** The holder device key the credential is bound to (used to present it). */
-  devicePrivateKey: JWK;
-  devicePublicKey: JWK;
+  devicePrivateKey: CoseKey;
 }
 
 export class MockAuthority {
   private constructor(
     private readonly iacaCertPem: string,
-    private readonly dsCertPem: string,
-    private readonly dsPrivateKey: JWK,
+    private readonly dsCertDer: Uint8Array,
+    private readonly dsPrivateKey: CoseKey,
     private readonly country: string,
   ) {}
 
@@ -97,8 +103,13 @@ export class MockAuthority {
       extensions: [new x509.KeyUsagesExtension(x509.KeyUsageFlags.digitalSignature, true)],
     });
 
-    const dsPrivateKey = await jwk(dsKeys.privateKey);
-    return new MockAuthority(iacaCert.toString('pem'), dsCert.toString('pem'), dsPrivateKey, country);
+    const dsPrivateKey = await coseKey(dsKeys.privateKey);
+    return new MockAuthority(
+      iacaCert.toString('pem'),
+      new Uint8Array(dsCert.rawData),
+      dsPrivateKey,
+      country,
+    );
   }
 
   /** The IACA root certificate (PEM). This is the verifier's trust anchor. */
@@ -109,8 +120,7 @@ export class MockAuthority {
   /** Issue and sign a mock mDL. */
   async issueMdl(options: IssueMdlOptions = {}): Promise<IssuedMdl> {
     const deviceKeys = await genKey();
-    const devicePublicKey = await jwk(deviceKeys.publicKey);
-    const devicePrivateKey = await jwk(deviceKeys.privateKey);
+    const devicePrivateKey = await coseKey(deviceKeys.privateKey);
 
     const now = new Date();
     const ageOver = options.ageOver ?? [18, 21];
@@ -122,17 +132,21 @@ export class MockAuthority {
       ...options.claims,
     };
 
-    const signed = await new Document(MDL_DOCTYPE)
-      .addIssuerNameSpace(MDL_NAMESPACE, claims)
-      .addValidityInfo({
-        signed: now,
-        validFrom: options.validFrom ?? now,
-        validUntil: options.validUntil ?? new Date(now.getTime() + YEAR_MS),
-      })
-      .addDeviceKeyInfo({ deviceKey: devicePublicKey })
-      .useDigestAlgorithm('SHA-256')
-      .sign({ issuerPrivateKey: this.dsPrivateKey, issuerCertificate: this.dsCertPem, alg: 'ES256' });
+    const issuerSigned = await new Issuer(MDL_DOCTYPE, mdocContext)
+      .addIssuerNamespace(MDL_NAMESPACE, claims)
+      .sign({
+        signingKey: this.dsPrivateKey,
+        certificates: [this.dsCertDer],
+        algorithm: SignatureAlgorithm.ES256,
+        digestAlgorithm: 'SHA-256',
+        deviceKeyInfo: { deviceKey: await deviceKey(deviceKeys.publicKey) },
+        validityInfo: {
+          signed: now,
+          validFrom: options.validFrom ?? now,
+          validUntil: options.validUntil ?? new Date(now.getTime() + YEAR_MS),
+        },
+      });
 
-    return { issuerSigned: new MDoc([signed]).encode(), devicePrivateKey, devicePublicKey };
+    return { issuerSigned, devicePrivateKey };
   }
 }

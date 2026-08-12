@@ -242,7 +242,7 @@ Each numbered concern:
 
 Only if all pass does PAVEL record the eligibility fact. The result object distinguishes outcomes: `verified` | `predicate_false` | `predicate_unavailable` | `untrusted_issuer` | `expired` | `replay` | `malformed`.
 
-**Implementation note (post-spike).** `-core` realizes this pipeline by wrapping `@auth0/mdl`'s `Verifier`, whose assessments map onto steps 2–7. Two wrinkles the spike surfaced: (a) `@auth0/mdl` collapses **holder binding (5)** and **freshness/audience (6)** into a single `deviceAuth` verdict over the `SessionTranscript`, so to keep surfacing `replay` distinctly `-core` pre-checks the transcript it supplies; and (b) there is no library helper for the DC API `SessionTranscript`, so `-core` builds it — `[null, null, ["OpenID4VPDCAPIHandover", SHA-256(cbor([origin, nonce, null]))]]` — and passes it to the verifier.
+**Implementation note.** `-core` realizes this pipeline by wrapping `@owf/mdoc`'s `Verifier` (OpenWallet Foundation). Its `verifyDeviceResponse` reports each check through an `onCheck` callback whose stable `category` values (`ISSUER_AUTH`, `DEVICE_AUTH`, `DATA_INTEGRITY`, `DOCUMENT_FORMAT`) map onto steps 2–7. Two things to note: (a) like most mdoc libraries, `@owf/mdoc` collapses **holder binding (5)** and **freshness/audience (6)** into a single `deviceAuth` verdict over the `SessionTranscript`, so `-core` surfaces a `DEVICE_AUTH` failure as `replay`; and (b) `@owf/mdoc` builds the DC API `SessionTranscript` natively via `SessionTranscript.forOid4VpDcApi({ origin, nonce })`, so `-core` no longer hand-assembles the handover CBOR. The crypto itself is pluggable — `-core` supplies an `MdocContext` (COSE sign1/verify, X.509 chain validation, digest/HKDF) built on `@noble/curves`, `@noble/hashes`, and `@peculiar/x509`.
 
 ---
 
@@ -338,14 +338,14 @@ Plain mdoc selective disclosure reveals the **issuer's signature** (the document
 | Concern | Choice | Rationale |
 |---|---|---|
 | Language | **TypeScript** | Types are part of the DX thesis; the middleware/SDK contract is much clearer with them, and the domain (CBOR maps, COSE structures) is error-prone untyped. |
-| mdoc verification | **`@auth0/mdl` v3.0.1** — confirmed by spike (§14 #1); `@animo-id/mdoc` / `mdoc-ts` remain fallbacks | Wraps all the COSE/CBOR/PKI: issuing (`Document.sign`) and a `Verifier` that runs the full check set — IACA chain, issuer signature, MSO validity, deviceAuth holder binding, digest match — plus selective disclosure with built-in `age_over_NN` handling. `-core` wraps it rather than hand-rolling COSE. |
-| CBOR / COSE | Provided transitively by the mdoc lib (e.g. `cbor-x`, COSE helpers) | Avoid a second, divergent CBOR stack. |
+| mdoc verification | **`@owf/mdoc`** (OpenWallet Foundation); `@animo-id/mdoc` is the fallback | `Issuer` / `Holder` / `Verifier` running the full check set — IACA chain, issuer signature, MSO validity, deviceAuth holder binding, digest match — plus selective disclosure of `age_over_NN`. Crypto is pluggable: `-core` supplies an `MdocContext` (COSE/X.509/digest via `@noble/*` + `@peculiar/x509`) rather than hand-rolling COSE. |
+| CBOR / COSE | CBOR/COSE structures from `@owf/mdoc` + `@owf/cose`; signing/verification primitives from `-core`'s `MdocContext` | One CBOR stack; the crypto primitives are the caller's to supply. |
 | Server | **Express** first, adapter pattern for others | Matches the proposal; `-core` stays framework-free. |
 | Sessions | Pluggable (`express-session` in the demo) | PAVEL records a flag; it does not own session storage. |
 | Build / mono-repo | pnpm workspaces + tsup/tsc | Lightweight; good for publishing several small packages. |
 | Tests | Vitest (unit) + a scripted emulator flow (integration) | See §13. |
 
-> ✅ **Resolved by spike (2026-08-03).** `@auth0/mdl` does the crypto and accepts an arbitrary session transcript, so `-core` wraps it. It has *no* DC API *handover* helper (only the `response_uri` OID4VP and WebAPI variants), so `-core` constructs the DC API `SessionTranscript` itself and hands the bytes to the verifier (and, in tests, the presenter). The spike minted an mDL, presented a `DeviceResponse` bound to a hand-built DC API transcript, and verified it end-to-end — every check passing, only `age_over_21` disclosed, and a wrong-origin transcript correctly rejected. The residual risk is now narrow: the exact handover byte layout for *real-wallet* interop, pinned in the integration tier (§14 #1).
+> ✅ **Library resolved.** `-core` wraps **`@owf/mdoc`**, which builds the DC API `SessionTranscript` natively (`forOid4VpDcApi`) and takes its crypto from a caller-supplied `MdocContext`. It mints an mDL, presents a `DeviceResponse`, and verifies it end-to-end with only `age_over_21` disclosed, correctly rejecting wrong-origin, expired, untrusted-issuer, and tampered presentations — all locked in by golden-vector tests (§13). The residual risk is narrow: the exact handover byte layout for *real-wallet* interop, pinned in the integration tier (§14 #1).
 
 ---
 
@@ -397,7 +397,7 @@ Registration as an approved relying party (production CSR, review) is required o
 
 | # | Item | Why it matters | Plan |
 |---|---|---|---|
-| 1 | **RESOLVED (spike).** Whether `@auth0/mdl` handles the **DC API session-transcript/handover** for ISO 18013-7, not just 18013-5. | Determined whether `-core` wraps a library or hand-rolls COSE. | ✅ **Wrap `@auth0/mdl`.** `-core` owns the DC API `SessionTranscript`: `[null, null, ["OpenID4VPDCAPIHandover", SHA-256(cbor([origin, nonce, null]))]]`. **Residual:** pin the exact handover bytes against a real wallet (CMWallet) in the integration tier. |
+| 1 | **RESOLVED.** Whether the mdoc library handles the **DC API session-transcript/handover** for ISO 18013-7, not just 18013-5. | Determined whether `-core` wraps a library or hand-rolls COSE. | ✅ **Wrap `@owf/mdoc`** (migrated from the archived `@auth0/mdl`), which builds the DC API `SessionTranscript` natively via `SessionTranscript.forOid4VpDcApi({ origin, nonce })`. **Residual:** pin the exact handover bytes against a real wallet (CMWallet) in the integration tier. |
 | 2 | **Revocation.** mdoc supports status mechanisms but they're inconsistently deployed. | A valid-signature credential could still be revoked. | v1 checks `validityInfo`; treat status-list revocation as a documented gap / stretch. |
 | 3 | **Protocol drift** — `openid4vp` vs `org-iso-mdoc`, response-mode encryption, DCQL revisions. | Chrome and Safari differ today; specs still moving. | Maintain a compatibility matrix; normalize both protocol strings in `-core`. |
 | 4 | **`age_over_NN` availability** varies by issuer. | Requested predicate may not exist in a given credential. | Distinct `predicate_unavailable` outcome; never fall back to DOB. |
@@ -413,6 +413,6 @@ Registration as an approved relying party (production CSR, review) is required o
 - ISO/IEC 18013-5 (mDL data model) and 18013-7 (online presentation)
 - [Chrome for Developers — Digital Credentials API](https://developer.chrome.com/blog/digital-credentials-api-shipped)
 - [WebKit — Online Identity Verification with the Digital Credentials API](https://webkit.org/blog/17431/online-identity-verification-with-the-digital-credentials-api/)
-- [`@auth0/mdl`](https://www.npmjs.com/package/@auth0/mdl) · [`@animo-id/mdoc`](https://github.com/animo/mdoc) · [OpenWallet Foundation `mdoc-ts`](https://github.com/openwallet-foundation-labs/mdoc-ts)
+- [`@owf/mdoc`](https://www.npmjs.com/package/@owf/mdoc) (OpenWallet Foundation, the mdoc library `-core` wraps) · [`@animo-id/mdoc`](https://github.com/animo/mdoc) (fallback)
 - [CMWallet sample (test wallet)](https://digitalcredentials.dev/docs/samples/android-wallet-sample/)
 - [Google Longfellow-ZK](https://github.com/google/longfellow-zk)

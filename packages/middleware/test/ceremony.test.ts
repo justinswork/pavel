@@ -1,7 +1,7 @@
 /**
  * End-to-end middleware test: an Express app with pavel() + requireAgeProof,
  * driven through the full ceremony by mock_authority (issuer + wallet) and
- * verified via pavel-core's real @auth0/mdl backend. No mocks in the crypto path.
+ * verified via pavel-core's real @owf/mdoc backend. No mocks in the crypto path.
  */
 import { describe, it, expect } from 'vitest';
 import express, { type Express } from 'express';
@@ -23,9 +23,6 @@ function buildApp(trustAnchors: string[]): Express {
   return app;
 }
 
-const b64url = (bytes: Uint8Array) =>
-  Buffer.from(bytes).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
 /** Run the wallet side of the ceremony against a challenge, returning the vp_token. */
 async function present(
   authority: MockAuthority,
@@ -33,7 +30,7 @@ async function present(
   ageOver: number[] = [21],
 ): Promise<string> {
   const wallet = new MockWallet(await authority.issueMdl({ ageOver }));
-  return b64url(await wallet.present({ nonce, origin: ORIGIN, disclose: ['age_over_21'] }));
+  return wallet.present({ nonce, origin: ORIGIN, disclose: ['age_over_21'] });
 }
 
 describe('pavel middleware ceremony', () => {

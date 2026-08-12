@@ -3,13 +3,14 @@
  *
  * Stands in for the real OS wallet: given an issued mDL, it produces a
  * DeviceResponse that discloses only the requested elements and binds deviceAuth
- * to the DC-API session transcript (our nonce + origin).
+ * to the DC-API session transcript (our nonce + origin). The result is the
+ * base64url vp_token as it would appear over OpenID4VP.
  */
-import { DeviceResponse } from '@auth0/mdl';
-import type { PresentationDefinition } from '@auth0/mdl/lib/mdoc/model/PresentationDefinition.js';
+import { Holder, DeviceRequest, DocRequest, ItemsRequest } from '@owf/mdoc';
+import { dcApiSessionTranscript, mdocContext } from '@justinswork/pavel-core';
 import type { IssuedMdl } from './authority';
-import { dcApiSessionTranscript } from '@justinswork/pavel-core';
 
+const MDL_DOCTYPE = 'org.iso.18013.5.1.mDL';
 const MDL_NAMESPACE = 'org.iso.18013.5.1';
 
 export interface PresentOptions {
@@ -21,35 +22,37 @@ export interface PresentOptions {
   disclose: string[];
 }
 
-function presentationDefinition(disclose: string[]): PresentationDefinition {
-  return {
-    id: 'pavel-age-check',
-    input_descriptors: [
-      {
-        id: 'org.iso.18013.5.1.mDL',
-        format: { mso_mdoc: { alg: ['ES256'] } },
-        constraints: {
-          limit_disclosure: 'required',
-          fields: disclose.map((element) => ({
-            path: [`$['${MDL_NAMESPACE}']['${element}']`],
-            intent_to_retain: false,
-          })),
-        },
-      },
+/** A device request limiting disclosure to the given elements (intent_to_retain: false). */
+function deviceRequest(disclose: string[]): DeviceRequest {
+  return DeviceRequest.create({
+    docRequests: [
+      DocRequest.create({
+        itemsRequest: ItemsRequest.create({
+          docType: MDL_DOCTYPE,
+          namespaces: {
+            [MDL_NAMESPACE]: Object.fromEntries(disclose.map((element) => [element, false])),
+          },
+        }),
+      }),
     ],
-  };
+  });
 }
 
 export class MockWallet {
   constructor(private readonly credential: IssuedMdl) {}
 
-  /** Present the credential as a base64-encodable DeviceResponse (the vp_token). */
-  async present({ nonce, origin, disclose }: PresentOptions): Promise<Uint8Array> {
-    const deviceResponse = await DeviceResponse.from(this.credential.issuerSigned)
-      .usingPresentationDefinition(presentationDefinition(disclose))
-      .usingSessionTranscriptBytes(dcApiSessionTranscript(origin, nonce))
-      .authenticateWithSignature(this.credential.devicePrivateKey, 'ES256')
-      .sign();
-    return deviceResponse.encode();
+  /** Present the credential as the base64url vp_token. */
+  async present({ nonce, origin, disclose }: PresentOptions): Promise<string> {
+    const sessionTranscript = await dcApiSessionTranscript(origin, nonce);
+    const deviceResponse = await Holder.createDeviceResponseForDeviceRequest(
+      {
+        deviceRequest: deviceRequest(disclose),
+        issuerSigned: [this.credential.issuerSigned],
+        sessionTranscript,
+        signature: { signingKey: this.credential.devicePrivateKey },
+      },
+      mdocContext,
+    );
+    return deviceResponse.encodedForOid4Vp;
   }
 }

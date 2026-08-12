@@ -16,7 +16,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@auth0/mdl": "^3.0.1"
+    "@noble/curves": "^2.3.0",
+    "@noble/hashes": "^2.3.0",
+    "@owf/cose": "^0.3.2",
+    "@owf/identity-common": "^0.3.2",
+    "@owf/mdoc": "^0.7.0",
+    "@panva/hkdf": "^1.2.1",
+    "@peculiar/x509": "^2.0.0",
+    "jose": "^6.2.8",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
