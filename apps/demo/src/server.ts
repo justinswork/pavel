@@ -119,8 +119,9 @@ app.post('/dev-wallet/present', async (req, res) => {
 });
 
 // Serve the pavel-client SDK bundle at the path index.html references.
+// no-store so on-device debugging never serves a stale bundle.
 app.get('/zk-age.js', (_req, res) => {
-  res.type('application/javascript').sendFile(CLIENT_BUNDLE);
+  res.type('application/javascript').set('Cache-Control', 'no-store').sendFile(CLIENT_BUNDLE);
 });
 
 // ── Store API ──────────────────────────────────────────────────────────────

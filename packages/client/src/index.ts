@@ -36,7 +36,8 @@ export interface RequestAgeProofOptions {
   requestPath?: string;
   /** Endpoint that verifies the presentation. Default '/pavel/verify'. */
   verifyPath?: string;
-  /** DC API protocol string to request. Default 'openid4vp'. */
+  /** DC API protocol string. Default 'openid4vp-v1-unsigned' (the version the
+   *  browser matcher requires; bare 'openid4vp' is rejected as an unlisted protocol). */
   protocol?: string;
   /** DCQL credential id to read the vp_token under. Default 'age_check'. */
   credentialId?: string;
@@ -104,7 +105,7 @@ export async function requestAgeProof(options: RequestAgeProofOptions): Promise<
     minAge,
     requestPath = '/pavel/request',
     verifyPath = '/pavel/verify',
-    protocol = 'openid4vp',
+    protocol = 'openid4vp-v1-unsigned',
     credentialId = 'age_check',
     signal,
   } = options;

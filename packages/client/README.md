@@ -58,7 +58,7 @@ testing:
 | `minAge` | — | required; maps to the `age_over_<minAge>` predicate |
 | `requestPath` | `/pavel/request` | where the challenge is minted |
 | `verifyPath` | `/pavel/verify` | where the presentation is verified |
-| `protocol` | `openid4vp` | DC API protocol string |
+| `protocol` | `openid4vp-v1-unsigned` | DC API protocol string (must be a browser-listed one; bare `openid4vp` is rejected) |
 | `credentialId` | `age_check` | DCQL id the vp_token is read under |
 | `fetch` | global `fetch` | injectable for tests / non-browser hosts |
 | `signal` | — | `AbortSignal` to cancel the in-flight ceremony |
@@ -105,7 +105,7 @@ Emits `dist/zk-age.js` (IIFE, `window.pavelClient`) and `dist/pavel-client.mjs`
 
 ## Limitation
 
-v0 targets the `openid4vp` protocol. Safari currently speaks only
+v0 targets the `openid4vp-v1-unsigned` protocol. Safari currently speaks only
 `org-iso-mdoc`, whose request payload differs; broadening the compatibility
 matrix (and the server-side request builder) is tracked separately.
 
