@@ -11,6 +11,7 @@
  * SDK; where no wallet exists it falls back to the dev wallet (see public/).
  */
 import { fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import session from 'express-session';
@@ -38,6 +39,20 @@ const ORIGIN = process.env.ORIGIN ?? `http://localhost:${PORT}`;
 const authority = await MockAuthority.create();
 const untrustedAuthority = await MockAuthority.create();
 
+// Any *.pem in trust-anchors/ is also trusted — e.g. CMWallet's IACA, so its
+// built-in test mDL verifies when presented from a real Android device.
+const TRUST_DIR = path.join(__dirname, '..', 'trust-anchors');
+function loadExtraTrustAnchors(): string[] {
+  try {
+    return readdirSync(TRUST_DIR)
+      .filter((f) => f.endsWith('.pem'))
+      .map((f) => readFileSync(path.join(TRUST_DIR, f), 'utf8'));
+  } catch {
+    return [];
+  }
+}
+const extraTrustAnchors = loadExtraTrustAnchors();
+
 const app = express();
 app.use(express.json());
 app.use(
@@ -54,7 +69,7 @@ app.use(
 app.use(
   pavel({
     origin: ORIGIN,
-    trustAnchors: [authority.trustAnchor],
+    trustAnchors: [authority.trustAnchor, ...extraTrustAnchors],
     clientName: 'Cellar & Co.',
   }),
 );
@@ -195,4 +210,5 @@ app.use(express.static(PUBLIC_DIR));
 app.listen(PORT, () => {
   console.log(`PAVEL demo store running at ${ORIGIN}`);
   console.log(`  real middleware + verifier · dev wallet stands in for the OS wallet · min age ${MIN_AGE}`);
+  console.log(`  trust anchors: MockAuthority + ${extraTrustAnchors.length} from trust-anchors/`);
 });
