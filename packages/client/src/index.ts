@@ -10,6 +10,7 @@ import {
   isDigitalCredentialsSupported,
   isUserDismissal,
   presentViaWallet,
+  extractVpToken,
 } from './dc-api';
 
 export { isDigitalCredentialsSupported } from './dc-api';
@@ -29,6 +30,20 @@ export type PavelReason =
 
 export type PavelResult = { ok: true } | { ok: false; reason: PavelReason };
 
+/** A diagnostic event, surfaced through the optional onDiagnostic callback. */
+export interface PavelDiagnostic {
+  stage: 'walletResponse' | 'walletError' | 'verifyResult';
+  data?: unknown;
+}
+
+function errorInfo(err: unknown): { name: string; message: string } {
+  if (err && typeof err === 'object') {
+    const e = err as { name?: unknown; message?: unknown };
+    return { name: String(e.name ?? 'Error'), message: String(e.message ?? '') };
+  }
+  return { name: 'Error', message: String(err) };
+}
+
 export interface RequestAgeProofOptions {
   /** The minimum age to prove, mapping to the age_over_<minAge> predicate. */
   minAge: number;
@@ -45,6 +60,9 @@ export interface RequestAgeProofOptions {
   fetch?: typeof fetch;
   /** Abort the in-flight ceremony. */
   signal?: AbortSignal;
+  /** Optional diagnostics hook — receives the raw wallet response, wallet errors,
+   *  and the verify result. Useful for debugging the opaque DC-API round-trip. */
+  onDiagnostic?: (event: PavelDiagnostic) => void;
   /**
    * A pre-fetched authorization request (from `fetchAgeRequest`). When provided,
    * `requestAgeProof` skips its own network fetch so `navigator.credentials.get()`
@@ -124,14 +142,21 @@ export async function requestAgeProof(options: RequestAgeProofOptions): Promise<
     }
   }
 
-  // 2. Hand it to the OS wallet and collect the vp_token.
-  let vpToken: string | null;
+  // 2. Hand it to the OS wallet and collect the credential it presents.
+  let credential;
   try {
-    vpToken = await presentViaWallet(authRequest, { protocol, credentialId, signal });
+    credential = await presentViaWallet(authRequest, { protocol, signal });
   } catch (err) {
+    options.onDiagnostic?.({ stage: 'walletError', data: errorInfo(err) });
     return { ok: false, reason: isUserDismissal(err) ? 'declined' : 'verification_failed' };
   }
-  if (vpToken == null) return { ok: false, reason: 'declined' };
+  if (!credential) return { ok: false, reason: 'declined' }; // nothing presented
+
+  options.onDiagnostic?.({ stage: 'walletResponse', data: credential.data });
+  const vpToken = extractVpToken(credential.data, credentialId);
+  // A credential WAS presented but we couldn't read a vp_token out of it — that's a
+  // malformed/unsupported response shape, not a dismissal. Surface it, don't fall back.
+  if (vpToken == null) return { ok: false, reason: 'malformed' };
 
   // 3. Post the presentation back for verification.
   try {
@@ -142,6 +167,7 @@ export async function requestAgeProof(options: RequestAgeProofOptions): Promise<
       signal,
     });
     const body = (await res.json().catch(() => ({}))) as { ok?: boolean; outcome?: unknown };
+    options.onDiagnostic?.({ stage: 'verifyResult', data: body });
     if (body?.ok === true) return { ok: true };
     return { ok: false, reason: reasonForOutcome(body?.outcome) };
   } catch {

@@ -160,15 +160,34 @@
       return window.pavelDevWallet.run({ minAge }); // couldn't mint a challenge
     }
 
+    // Track whether the OS wallet actually presented a credential — that, not the
+    // specific failure reason, decides fall-back vs. surface.
+    let presented = false;
+    const onDiagnostic = (event) => {
+      if (event.stage === 'walletResponse') presented = true;
+      shipDiagnostic(event);
+    };
+
     let proof;
     try {
-      proof = await window.pavelClient.requestAgeProof({ minAge, request });
+      proof = await window.pavelClient.requestAgeProof({ minAge, request, onDiagnostic });
     } catch {
       proof = { ok: false, reason: 'verification_failed' };
     }
     if (proof.ok) return proof;
-    const noRealWallet = ['unsupported', 'declined', 'request_failed', 'verification_failed'];
-    return noRealWallet.includes(proof.reason) ? window.pavelDevWallet.run({ minAge }) : proof;
+    // A credential WAS presented → surface the verifier's verdict. Nothing presented
+    // (no OS wallet / dismissed / retrieval error) → dev-wallet fallback.
+    return presented ? proof : window.pavelDevWallet.run({ minAge });
+  }
+
+  /** Ship DC-API diagnostics to the server terminal — a dev aid for on-device debugging. */
+  function shipDiagnostic(event) {
+    fetch('/debug/log', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(event),
+      keepalive: true,
+    }).catch(() => {});
   }
 
   function reasonText(reason) {

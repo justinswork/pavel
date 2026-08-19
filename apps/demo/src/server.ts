@@ -124,6 +124,13 @@ app.get('/zk-age.js', (_req, res) => {
   res.type('application/javascript').set('Cache-Control', 'no-store').sendFile(CLIENT_BUNDLE);
 });
 
+// DEV ONLY: the browser SDK ships DC-API diagnostics here so on-device runs are
+// visible in this terminal (the phone has no console we can read).
+app.post('/debug/log', (req, res) => {
+  console.log('[dc-api debug]', JSON.stringify(req.body ?? {}).slice(0, 6000));
+  res.json({ ok: true });
+});
+
 // ── Store API ──────────────────────────────────────────────────────────────
 
 app.get('/api/catalog', (_req, res) => {

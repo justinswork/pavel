@@ -97,24 +97,23 @@ export function extractVpToken(data: unknown, credentialId: string): string | nu
 
 export interface PresentOptions {
   protocol: string;
-  credentialId: string;
   signal?: AbortSignal;
 }
 
 /**
- * Hand the authorization request to the wallet and return the vp_token, or null
- * if the wallet returned no credential (dismissed). Throws for API errors, which
- * the caller classifies via isUserDismissal.
+ * Hand the authorization request to the wallet and return the raw credential it
+ * presents, or null if the user presented nothing. Throws for API errors, which
+ * the caller classifies via isUserDismissal. Token extraction is left to the
+ * caller so it can surface a distinct outcome when a credential comes back
+ * unreadable (vs. nothing presented at all).
  */
 export async function presentViaWallet(
   authRequest: unknown,
-  { protocol, credentialId, signal }: PresentOptions,
-): Promise<string | null> {
+  { protocol, signal }: PresentOptions,
+): Promise<DigitalCredential | null> {
   const credential = (await navigator.credentials.get({
     digital: { requests: [{ protocol, data: authRequest }] },
     signal,
   })) as DigitalCredential | null;
-
-  if (!credential) return null;
-  return extractVpToken(credential.data, credentialId);
+  return credential ?? null;
 }
