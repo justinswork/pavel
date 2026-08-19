@@ -44,6 +44,24 @@ export interface RequestAgeProofOptions {
   fetch?: typeof fetch;
   /** Abort the in-flight ceremony. */
   signal?: AbortSignal;
+  /**
+   * A pre-fetched authorization request (from `fetchAgeRequest`). When provided,
+   * `requestAgeProof` skips its own network fetch so `navigator.credentials.get()`
+   * is the first async call in the user gesture — keeping transient activation
+   * intact, which the Digital Credentials API requires. See the README.
+   */
+  request?: unknown;
+}
+
+export interface FetchAgeRequestOptions {
+  /** The minimum age to prove, mapping to the age_over_<minAge> predicate. */
+  minAge: number;
+  /** Endpoint that mints the challenge. Default '/pavel/request'. */
+  requestPath?: string;
+  /** Injectable fetch (testing / non-browser hosts). Default global fetch. */
+  fetch?: typeof fetch;
+  /** Abort the fetch. */
+  signal?: AbortSignal;
 }
 
 /** Server verify outcomes that map straight onto a PavelReason. */
@@ -63,6 +81,21 @@ function reasonForOutcome(outcome: unknown): PavelReason {
 }
 
 /**
+ * Fetch the authorization request the server mints for a ceremony.
+ *
+ * Call this AHEAD of the user gesture, then pass the result to `requestAgeProof`
+ * as `request`, so the wallet call runs first in the gesture (see the README).
+ * Throws on a non-2xx response or network error.
+ */
+export async function fetchAgeRequest(options: FetchAgeRequestOptions): Promise<unknown> {
+  const { minAge, requestPath = '/pavel/request', signal } = options;
+  const doFetch = options.fetch ?? globalThis.fetch;
+  const res = await doFetch(`${requestPath}?minAge=${encodeURIComponent(minAge)}`, { signal });
+  if (!res.ok) throw new Error(`pavel: age request failed (${res.status})`);
+  return res.json();
+}
+
+/**
  * Run the age-verification ceremony. Resolves to `{ ok: true }` once the server
  * records the eligibility fact, or `{ ok: false, reason }` otherwise. Never throws.
  */
@@ -79,14 +112,15 @@ export async function requestAgeProof(options: RequestAgeProofOptions): Promise<
 
   if (!isDigitalCredentialsSupported()) return { ok: false, reason: 'unsupported' };
 
-  // 1. Fetch the authorization request the server minted for this ceremony.
-  let authRequest: unknown;
-  try {
-    const res = await doFetch(`${requestPath}?minAge=${encodeURIComponent(minAge)}`, { signal });
-    if (!res.ok) return { ok: false, reason: 'request_failed' };
-    authRequest = await res.json();
-  } catch {
-    return { ok: false, reason: 'request_failed' };
+  // 1. The authorization request — reuse a pre-fetched one (gesture-safe), else
+  //    fetch it now. Passing `request` keeps get() first in the user gesture.
+  let authRequest = options.request;
+  if (authRequest === undefined) {
+    try {
+      authRequest = await fetchAgeRequest({ minAge, requestPath, fetch: doFetch, signal });
+    } catch {
+      return { ok: false, reason: 'request_failed' };
+    }
   }
 
   // 2. Hand it to the OS wallet and collect the vp_token.

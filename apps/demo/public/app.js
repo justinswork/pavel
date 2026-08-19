@@ -144,14 +144,25 @@
 
   /**
    * Try the real Digital Credentials API via the pavel-client SDK; on a host with
-   * no OS wallet — like this testbed — fall back to the simulated dev wallet.
+   * no OS wallet — like a desktop browser — fall back to the simulated dev wallet.
    * Genuine verification verdicts (predicate_false, untrusted_issuer, …) are
    * surfaced as-is; only "couldn't run here" signals trigger the fallback.
+   *
+   * The request is fetched up front so navigator.credentials.get() is the first
+   * async call in the click, keeping the transient activation the DC API needs.
+   * No timeout wraps the wallet call — a real user needs time to choose + consent.
    */
   async function runAgeCeremony(minAge) {
+    let request;
+    try {
+      request = await window.pavelClient.fetchAgeRequest({ minAge });
+    } catch {
+      return window.pavelDevWallet.run({ minAge }); // couldn't mint a challenge
+    }
+
     let proof;
     try {
-      proof = await window.pavelClient.requestAgeProof({ minAge, signal: AbortSignal.timeout(5000) });
+      proof = await window.pavelClient.requestAgeProof({ minAge, request });
     } catch {
       proof = { ok: false, reason: 'verification_failed' };
     }

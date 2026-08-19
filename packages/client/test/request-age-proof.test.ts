@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { requestAgeProof } from '../src/index';
+import { requestAgeProof, fetchAgeRequest } from '../src/index';
 import { extractVpToken } from '../src/dc-api';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -60,6 +60,28 @@ describe('requestAgeProof', () => {
     expect(JSON.parse(String(verifyCall?.[1]?.body))).toEqual({ vp_token: 'TOKEN123' });
   });
 
+  it('reuses a pre-fetched request and does not fetch the challenge again', async () => {
+    let walletSawRequest: unknown;
+    vi.stubGlobal('DigitalCredential', class {});
+    vi.stubGlobal('navigator', {
+      credentials: {
+        get: async (opts: { digital?: { requests?: Array<{ data?: unknown }> } }) => {
+          walletSawRequest = opts?.digital?.requests?.[0]?.data;
+          return { data: 'TOKEN' };
+        },
+      },
+    });
+    const fetchSpy = makeFetch({ verify: { body: { ok: true } } });
+
+    const result = await requestAgeProof({ minAge: 21, request: AUTH_REQUEST, fetch: fetchSpy });
+    expect(result).toEqual({ ok: true });
+
+    const urls = fetchSpy.mock.calls.map(([u]) => String(u));
+    expect(urls.some((u) => u.includes('/pavel/request'))).toBe(false); // reused, not re-fetched
+    expect(urls.some((u) => u.includes('/pavel/verify'))).toBe(true);
+    expect(walletSawRequest).toEqual(AUTH_REQUEST); // the pre-fetched request reached the wallet
+  });
+
   it('reads minAge into the request URL', async () => {
     stubWallet(async () => ({ data: 'TOKEN' }));
     const fetchSpy = makeFetch({ verify: { body: { ok: true } } });
@@ -113,6 +135,20 @@ describe('requestAgeProof', () => {
     });
     const result = await requestAgeProof({ minAge: 21, fetch: fetchSpy });
     expect(result).toEqual({ ok: false, reason: 'request_failed' });
+  });
+});
+
+describe('fetchAgeRequest', () => {
+  it('fetches and returns the parsed authorization request', async () => {
+    const fetchSpy = makeFetch({ request: { body: AUTH_REQUEST } });
+    const req = await fetchAgeRequest({ minAge: 21, fetch: fetchSpy });
+    expect(req).toEqual(AUTH_REQUEST);
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/pavel/request?minAge=21');
+  });
+
+  it('throws on a non-2xx response', async () => {
+    const fetchSpy = makeFetch({ request: { status: 500 } });
+    await expect(fetchAgeRequest({ minAge: 21, fetch: fetchSpy })).rejects.toThrow();
   });
 });
 

@@ -62,6 +62,31 @@ testing:
 | `credentialId` | `age_check` | DCQL id the vp_token is read under |
 | `fetch` | global `fetch` | injectable for tests / non-browser hosts |
 | `signal` | — | `AbortSignal` to cancel the in-flight ceremony |
+| `request` | — | a pre-fetched authorization request (from `fetchAgeRequest`) — see *Transient activation* below |
+
+## Transient activation
+
+`navigator.credentials.get()` requires **transient activation** — it must run
+inside a live user gesture. Chrome keeps that activation alive for ~5s across
+`await`s, so the one-call form above usually works. But to be robust (slow
+networks, tunnels), fetch the request *before* the gesture and pass it in, so the
+wallet call is the first async step in the handler:
+
+```js
+import { fetchAgeRequest, requestAgeProof } from '@justinswork/pavel-client';
+
+// Ahead of the gesture (e.g. when the user shows checkout intent):
+const request = await fetchAgeRequest({ minAge: 21 });
+
+// Inside the click handler — get() runs first, activation intact:
+button.addEventListener('click', async () => {
+  const result = await requestAgeProof({ minAge: 21, request });
+});
+```
+
+The minted nonce is single-use and TTL'd (default 5 min), so fetch it close to
+the gesture. `fetchAgeRequest` throws on a network / non-2xx error; `requestAgeProof`
+still never throws.
 
 ## Feature detection
 
