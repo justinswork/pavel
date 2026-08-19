@@ -1,0 +1,24 @@
+{
+  "name": "@justinswork/pavel-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser SDK (zk-age.js): runs the PAVEL age-verification ceremony via the Digital Credentials API. The only knob is minAge.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=iife --global-name=pavelClient --outfile=dist/zk-age.js && esbuild src/index.ts --bundle --format=esm --outfile=dist/pavel-client.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.8"
+  }
+}
