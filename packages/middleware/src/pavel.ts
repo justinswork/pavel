@@ -24,7 +24,10 @@ function parseMinAge(raw: unknown): number | null {
 
 /** Mount the ceremony endpoints. Use with `app.use(pavel({ ... }))`. */
 export function pavel(options: PavelOptions): Router {
-  const { origin, trustAnchors, clientName } = options;
+  const { trustAnchors, clientName } = options;
+  // A web origin has no trailing slash; a stray one changes the DC-API handover
+  // bytes so deviceAuth never matches — every presentation would read as replay.
+  const origin = options.origin.replace(/\/+$/, '');
   const nonceTtlMs = options.nonceTtlMs ?? DEFAULT_NONCE_TTL_MS;
   const backend = createOwfMdocBackend({ trustAnchors });
   const router = Router();

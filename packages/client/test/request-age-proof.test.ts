@@ -161,6 +161,15 @@ describe('extractVpToken', () => {
     expect(extractVpToken({ vp_token: 'T' }, 'age_check')).toBe('T');
   });
 
+  it('reads the OpenID4VP 1.0 array shape { vp_token: { id: ["token"] } }', () => {
+    // The exact shape Chrome + CMWallet return on Android.
+    expect(extractVpToken({ vp_token: { age_check: ['T'] } }, 'age_check')).toBe('T');
+  });
+
+  it('reads a vp_token that is an array directly', () => {
+    expect(extractVpToken({ vp_token: ['T'] }, 'age_check')).toBe('T');
+  });
+
   it('parses a JSON string response', () => {
     expect(extractVpToken(JSON.stringify({ vp_token: { age_check: 'T' } }), 'age_check')).toBe('T');
   });

@@ -32,7 +32,9 @@ const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const CLIENT_BUNDLE = path.join(__dirname, '..', '..', '..', 'packages', 'client', 'dist', 'zk-age.js');
 
 const PORT = Number(process.env.PORT ?? 3000);
-const ORIGIN = process.env.ORIGIN ?? `http://localhost:${PORT}`;
+// Normalize away any trailing slash so the dev wallet and the middleware bind to
+// the exact web origin the browser uses (…com, never …com/).
+const ORIGIN = (process.env.ORIGIN ?? `http://localhost:${PORT}`).replace(/\/+$/, '');
 
 // The trust root the store verifies against, and a second, untrusted authority the
 // dev wallet can present from to demonstrate the untrusted_issuer outcome.

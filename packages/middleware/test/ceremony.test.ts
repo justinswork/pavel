@@ -12,11 +12,11 @@ import { pavel, requireAgeProof } from '../src/index';
 
 const ORIGIN = 'http://localhost';
 
-function buildApp(trustAnchors: string[]): Express {
+function buildApp(trustAnchors: string[], origin: string = ORIGIN): Express {
   const app = express();
   app.use(express.json());
   app.use(session({ secret: 'test-secret', resave: false, saveUninitialized: true }));
-  app.use(pavel({ trustAnchors, origin: ORIGIN }));
+  app.use(pavel({ trustAnchors, origin }));
   app.post('/gated', requireAgeProof({ minAge: 21 }), (_req, res) => {
     res.json({ ok: true, content: 'secret' });
   });
@@ -90,6 +90,22 @@ describe('pavel middleware ceremony', () => {
       .send({ vp_token: vpToken })
       .expect(400)
       .expect((res) => expect(res.body.outcome).toBe('replay'));
+  });
+
+  it('normalizes a trailing-slash origin so deviceAuth binding still matches', async () => {
+    // A stray trailing slash on the configured origin must not break verification:
+    // the wallet binds to the bare web origin, the middleware normalizes to match.
+    const authority = await MockAuthority.create();
+    const agent = request.agent(buildApp([authority.trustAnchor], `${ORIGIN}/`));
+
+    const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
+    const vpToken = await present(authority, reqRes.body.nonce);
+
+    await agent
+      .post('/pavel/verify')
+      .send({ vp_token: vpToken })
+      .expect(200)
+      .expect((res) => expect(res.body).toEqual({ ok: true, outcome: 'verified' }));
   });
 
   it('401s with a machine-readable hint when unverified', async () => {

@@ -61,14 +61,24 @@ function safeJsonParse(input: string): unknown {
   }
 }
 
+/** Coerce a vp_token entry to a string: a bare string, or the first string in an array. */
+function asTokenString(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const first = value.find((v) => typeof v === 'string');
+    return typeof first === 'string' ? first : null;
+  }
+  return null;
+}
+
 /**
  * Pull the credential's vp_token out of a DC API response.
  *
- * The `data` may be a JSON envelope (string or object) or a bare token string,
- * and inside an envelope the vp_token may itself be a string or a map keyed by
- * DCQL credential id (OpenID4VP `{ vp_token: { id: … } }`). We normalize all of
- * those to the single base64url string the verifier expects, and reject anything
- * that is neither an envelope nor a token-shaped string.
+ * The `data` may be a JSON envelope (string or object) or a bare token string.
+ * Inside an envelope the vp_token may be a string, an array of presentations, or
+ * a map keyed by DCQL credential id whose values are strings or arrays — the
+ * OpenID4VP 1.0 shape is `{ vp_token: { <id>: ["<base64url>"] } }`. We normalize
+ * all of those to the single base64url string the verifier expects.
  */
 export function extractVpToken(data: unknown, credentialId: string): string | null {
   if (data == null) return null;
@@ -76,20 +86,27 @@ export function extractVpToken(data: unknown, credentialId: string): string | nu
   let value: unknown = data;
   if (typeof value === 'string') {
     const parsed = safeJsonParse(value);
-    // A JSON object envelope → dig in; otherwise the string itself is the token.
+    // A JSON object/array envelope → dig in; otherwise the string itself is the token.
     if (parsed && typeof parsed === 'object') value = parsed;
     else return BASE64URL.test(value) ? value : null;
   }
 
-  if (value && typeof value === 'object') {
-    const container =
-      'vp_token' in value ? (value as { vp_token: unknown }).vp_token : value;
-    if (typeof container === 'string') return container;
-    if (container && typeof container === 'object') {
-      const map = container as Record<string, unknown>;
-      if (typeof map[credentialId] === 'string') return map[credentialId] as string;
-      const firstString = Object.values(map).find((v) => typeof v === 'string');
-      return typeof firstString === 'string' ? firstString : null;
+  // Unwrap the OpenID4VP vp_token envelope if present.
+  const container =
+    value && typeof value === 'object' && 'vp_token' in value
+      ? (value as { vp_token: unknown }).vp_token
+      : value;
+
+  const direct = asTokenString(container);
+  if (direct) return direct;
+
+  if (container && typeof container === 'object') {
+    const map = container as Record<string, unknown>;
+    const byId = asTokenString(map[credentialId]);
+    if (byId) return byId;
+    for (const entry of Object.values(map)) {
+      const token = asTokenString(entry);
+      if (token) return token;
     }
   }
   return null;
