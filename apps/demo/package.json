@@ -2,14 +2,18 @@
   "name": "pavel-demo",
   "version": "0.1.0",
   "private": true,
-  "description": "Reference age-gated e-commerce demo used as the end-to-end testbed for PAVEL. Uses a MOCK age-gate that mirrors the real requireAgeProof/ceremony contract.",
+  "description": "Reference age-gated e-commerce demo — the end-to-end testbed for PAVEL. Runs the real middleware + core verifier over real mDL credentials, with a simulated dev wallet standing in for the OS wallet.",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "dev": "pnpm --filter @justinswork/pavel-client build && tsx watch src/server.ts",
+    "start": "pnpm --filter @justinswork/pavel-client build && tsx src/server.ts",
+    "build:client": "pnpm --filter @justinswork/pavel-client build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@justinswork/pavel": "workspace:*",
+    "@justinswork/pavel-client": "workspace:*",
+    "@justinswork/pavel-mock-authority": "workspace:*",
     "express": "^4.19.2",
     "express-session": "^1.18.0"
   },

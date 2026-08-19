@@ -8,7 +8,7 @@
   </head>
   <body>
     <div class="mock-banner">
-      🔒 <strong>PAVEL testbed</strong> — age checks use a <em>mock</em> wallet &amp; verifier. No real credentials.
+      🔒 <strong>PAVEL testbed</strong> — the age check runs the <em>real</em> verifier over real mDL credentials; only the holder is a simulated <em>dev wallet</em> (this browser has no OS wallet).
     </div>
 
     <header class="site-header">
@@ -40,6 +40,7 @@
     </main>
 
     <script src="/zk-age.js"></script>
+    <script src="/dev-wallet.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

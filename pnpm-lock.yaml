@@ -10,6 +10,15 @@ importers:
 
   apps/demo:
     dependencies:
+      '@justinswork/pavel':
+        specifier: workspace:*
+        version: link:../../packages/middleware
+      '@justinswork/pavel-client':
+        specifier: workspace:*
+        version: link:../../packages/client
+      '@justinswork/pavel-mock-authority':
+        specifier: workspace:*
+        version: link:../../packages/mock_authority
       express:
         specifier: ^4.19.2
         version: 4.22.2

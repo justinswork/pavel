@@ -117,7 +117,7 @@
     // Gate says verification is required → run the PAVEL ceremony, then retry.
     if (res.status === 401 && res.body.error === 'age_verification_required') {
       msg('Age verification required — opening wallet…', 'info');
-      const proof = await window.pavelClient.requestAgeProof({ minAge });
+      const proof = await runAgeCeremony(minAge);
       await refreshStatus();
       if (!proof.ok) {
         msg(reasonText(proof.reason), 'error');
@@ -140,6 +140,24 @@
     } else {
       msg('Checkout failed.', 'error');
     }
+  }
+
+  /**
+   * Try the real Digital Credentials API via the pavel-client SDK; on a host with
+   * no OS wallet — like this testbed — fall back to the simulated dev wallet.
+   * Genuine verification verdicts (predicate_false, untrusted_issuer, …) are
+   * surfaced as-is; only "couldn't run here" signals trigger the fallback.
+   */
+  async function runAgeCeremony(minAge) {
+    let proof;
+    try {
+      proof = await window.pavelClient.requestAgeProof({ minAge, signal: AbortSignal.timeout(5000) });
+    } catch {
+      proof = { ok: false, reason: 'verification_failed' };
+    }
+    if (proof.ok) return proof;
+    const noRealWallet = ['unsupported', 'declined', 'request_failed', 'verification_failed'];
+    return noRealWallet.includes(proof.reason) ? window.pavelDevWallet.run({ minAge }) : proof;
   }
 
   function reasonText(reason) {
