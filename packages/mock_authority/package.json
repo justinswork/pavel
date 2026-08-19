@@ -13,7 +13,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "gen:fixtures": "tsx scripts/generate-fixtures.mts"
   },
   "dependencies": {
     "@justinswork/pavel-core": "workspace:*",
@@ -24,6 +25,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "jose": "^6.2.8",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.0",
     "vitest": "^2.1.8"
   }
