@@ -25,7 +25,7 @@ import {
 } from '@owf/mdoc';
 import { MDL_DOCTYPE, MDL_NAMESPACE } from './backend';
 import { mdocContext } from './mdoc-context';
-import { hpkeOpen } from './hpke';
+import { hpkeOpen, hpkeSeal } from './hpke';
 import { agePredicate, assertValidMinAge } from './request';
 import { outcomeFor } from './pipeline';
 import type { VerifyResult } from './types';
@@ -141,6 +141,61 @@ export function parseEncryptedResponse(data: unknown): { enc: Uint8Array; cipher
     throw new Error('missing enc/cipherText in encrypted response');
   }
   return { enc, ciphertext };
+}
+
+/** Read a key that may be a number or string, from a decoded Map or plain object. */
+function readKey(container: unknown, key: number | string): unknown {
+  if (container instanceof Map) {
+    if (container.has(key)) return container.get(key);
+    return container.get(String(key));
+  }
+  if (container && typeof container === 'object') {
+    const obj = container as Record<string, unknown>;
+    return obj[key as keyof typeof obj] ?? obj[String(key)];
+  }
+  return undefined;
+}
+
+/** Recover the reader's public key (as a JWK) from an EncryptionInfo's COSE_Key. */
+function recipientPublicKeyFromEncryptionInfo(encryptionInfoBase64Url: string): Record<string, unknown> {
+  const decoded = cborDecode(b64urlToBytes(encryptionInfoBase64Url)) as unknown;
+  const paramsMap = Array.isArray(decoded) && decoded.length >= 2 ? decoded[1] : decoded;
+  const coseKey = readKey(paramsMap, 'recipientPublicKey');
+  const x = readKey(coseKey, -2);
+  const y = readKey(coseKey, -3);
+  if (!(x instanceof Uint8Array) || !(y instanceof Uint8Array)) {
+    throw new Error('EncryptionInfo missing recipient public key coordinates');
+  }
+  return { kty: 'EC', crv: 'P-256', x: bytesToB64url(x), y: bytesToB64url(y) };
+}
+
+/**
+ * Holder/test counterpart of the verify path: HPKE-seal a raw DeviceResponse to the
+ * reader key in EncryptionInfo and wrap it as an EncryptedResponse (base64url). Used
+ * by the mock wallet to exercise the whole ISO round-trip without a real device.
+ */
+export async function sealIsoMdocResponse(params: {
+  deviceResponseBytes: Uint8Array;
+  encryptionInfoBase64Url: string;
+  origin: string;
+}): Promise<string> {
+  const transcript = await SessionTranscript.forIsoMdocDcApi(
+    { encryptionInfoBase64Url: params.encryptionInfoBase64Url, origin: params.origin },
+    mdocContext,
+  );
+  const { enc, ciphertext } = await hpkeSeal({
+    recipientPublicKeyJwk: recipientPublicKeyFromEncryptionInfo(params.encryptionInfoBase64Url),
+    info: transcript.encode(),
+    plaintext: params.deviceResponseBytes,
+  });
+  const envelope = cborEncode([
+    'dcapi',
+    new Map<string, unknown>([
+      ['enc', enc],
+      ['cipherText', ciphertext],
+    ]),
+  ]);
+  return bytesToB64url(envelope);
 }
 
 /**

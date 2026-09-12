@@ -6,8 +6,8 @@
  * to the DC-API session transcript (our nonce + origin). The result is the
  * base64url vp_token as it would appear over OpenID4VP.
  */
-import { Holder, DeviceRequest, DocRequest, ItemsRequest } from '@owf/mdoc';
-import { dcApiSessionTranscript, mdocContext } from '@justinswork/pavel-core';
+import { Holder, DeviceRequest, DocRequest, ItemsRequest, SessionTranscript } from '@owf/mdoc';
+import { dcApiSessionTranscript, mdocContext, sealIsoMdocResponse } from '@justinswork/pavel-core';
 import type { IssuedMdl } from './authority';
 
 const MDL_DOCTYPE = 'org.iso.18013.5.1.mDL';
@@ -54,5 +54,35 @@ export class MockWallet {
       mdocContext,
     );
     return deviceResponse.encodedForOid4Vp;
+  }
+
+  /**
+   * Present under ISO 18013-7 Annex C (org-iso-mdoc, Safari): bind deviceAuth to the
+   * ISO handover transcript, then HPKE-seal the DeviceResponse to the reader key in
+   * the EncryptionInfo. Returns the base64url EncryptedResponse.
+   */
+  async presentIso({
+    encryptionInfoBase64Url,
+    origin,
+    disclose,
+  }: {
+    encryptionInfoBase64Url: string;
+    origin: string;
+    disclose: string[];
+  }): Promise<string> {
+    const sessionTranscript = await SessionTranscript.forIsoMdocDcApi(
+      { encryptionInfoBase64Url, origin },
+      mdocContext,
+    );
+    const deviceResponse = await Holder.createDeviceResponseForDeviceRequest(
+      {
+        deviceRequest: deviceRequest(disclose),
+        issuerSigned: [this.credential.issuerSigned],
+        sessionTranscript,
+        signature: { signingKey: this.credential.devicePrivateKey },
+      },
+      mdocContext,
+    );
+    return sealIsoMdocResponse({ deviceResponseBytes: deviceResponse.encode(), encryptionInfoBase64Url, origin });
   }
 }
