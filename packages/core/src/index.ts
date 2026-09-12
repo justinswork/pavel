@@ -7,4 +7,5 @@ export * from './backend';
 export * from './pipeline';
 export * from './mdoc-context';
 export * from './session-transcript';
+export * from './hpke';
 export * from './backend-owf';

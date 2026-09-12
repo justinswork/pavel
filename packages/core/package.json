@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hpke/core": "^1.9.0",
     "@noble/curves": "^2.3.0",
     "@noble/hashes": "^2.3.0",
     "@owf/cose": "^0.3.2",
