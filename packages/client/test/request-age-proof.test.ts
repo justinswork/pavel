@@ -54,10 +54,35 @@ describe('requestAgeProof', () => {
     const result = await requestAgeProof({ minAge: 21, fetch: fetchSpy });
     expect(result).toEqual({ ok: true });
 
-    // The extracted vp_token is posted to verify.
+    // The extracted vp_token is posted to verify, tagged with the chosen protocol.
     const verifyCall = fetchSpy.mock.calls.find(([u]) => String(u).includes('/pavel/verify'));
     expect(verifyCall?.[1]?.method).toBe('POST');
-    expect(JSON.parse(String(verifyCall?.[1]?.body))).toEqual({ vp_token: 'TOKEN123' });
+    expect(JSON.parse(String(verifyCall?.[1]?.body))).toEqual({ protocol: 'openid4vp', vp_token: 'TOKEN123' });
+  });
+
+  it('forwards the raw encrypted response for org-iso-mdoc (Safari)', async () => {
+    stubWallet(async () => ({ protocol: 'org-iso-mdoc', data: 'ENCRYPTED_RESPONSE_B64URL' }));
+    const fetchSpy = makeFetch({
+      request: {
+        body: {
+          requests: [
+            { protocol: 'openid4vp-v1-unsigned', data: AUTH_REQUEST },
+            { protocol: 'org-iso-mdoc', data: { deviceRequest: 'd', encryptionInfo: 'e' } },
+          ],
+        },
+      },
+      verify: { body: { ok: true, outcome: 'verified' } },
+    });
+
+    const result = await requestAgeProof({ minAge: 21, fetch: fetchSpy });
+    expect(result).toEqual({ ok: true });
+
+    // ISO forwards the raw encrypted response for the server to decrypt.
+    const verifyCall = fetchSpy.mock.calls.find(([u]) => String(u).includes('/pavel/verify'));
+    expect(JSON.parse(String(verifyCall?.[1]?.body))).toEqual({
+      protocol: 'org-iso-mdoc',
+      response: 'ENCRYPTED_RESPONSE_B64URL',
+    });
   });
 
   it('reuses a pre-fetched request and does not fetch the challenge again', async () => {

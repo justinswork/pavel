@@ -99,6 +99,24 @@ function reasonForOutcome(outcome: unknown): PavelReason {
     : 'verification_failed';
 }
 
+/** One protocol-tagged DC-API request the browser can choose from. */
+interface DcApiRequest {
+  protocol: string;
+  data: unknown;
+}
+
+/**
+ * Normalize the fetched challenge into the DC-API `requests` array. The server
+ * returns `{ requests: [...] }` (both protocols); a bare authorization request is
+ * accepted too and wrapped as a single openid4vp entry (back-compat).
+ */
+function toRequests(fetched: unknown, fallbackProtocol: string): DcApiRequest[] {
+  if (fetched && typeof fetched === 'object' && Array.isArray((fetched as { requests?: unknown }).requests)) {
+    return (fetched as { requests: DcApiRequest[] }).requests;
+  }
+  return [{ protocol: fallbackProtocol, data: fetched }];
+}
+
 /**
  * Fetch the authorization request the server mints for a ceremony.
  *
@@ -142,28 +160,39 @@ export async function requestAgeProof(options: RequestAgeProofOptions): Promise<
     }
   }
 
-  // 2. Hand it to the OS wallet and collect the credential it presents.
+  // 2. Offer both protocols to the OS wallet; the browser picks the one it supports
+  //    (openid4vp on Chrome, org-iso-mdoc on Safari).
   let credential;
   try {
-    credential = await presentViaWallet(authRequest, { protocol, signal });
+    credential = await presentViaWallet(toRequests(authRequest, protocol), { signal });
   } catch (err) {
     options.onDiagnostic?.({ stage: 'walletError', data: errorInfo(err) });
     return { ok: false, reason: isUserDismissal(err) ? 'declined' : 'verification_failed' };
   }
   if (!credential) return { ok: false, reason: 'declined' }; // nothing presented
 
-  options.onDiagnostic?.({ stage: 'walletResponse', data: credential.data });
-  const vpToken = extractVpToken(credential.data, credentialId);
-  // A credential WAS presented but we couldn't read a vp_token out of it — that's a
-  // malformed/unsupported response shape, not a dismissal. Surface it, don't fall back.
-  if (vpToken == null) return { ok: false, reason: 'malformed' };
+  const usedProtocol = credential.protocol;
+  options.onDiagnostic?.({ stage: 'walletResponse', data: { protocol: usedProtocol, data: credential.data } });
+
+  // Build the verify body per protocol: ISO forwards the raw encrypted response for
+  // the server to decrypt; OpenID4VP extracts the vp_token here.
+  let verifyBody: Record<string, unknown>;
+  if (usedProtocol === 'org-iso-mdoc') {
+    verifyBody = { protocol: usedProtocol, response: credential.data };
+  } else {
+    const vpToken = extractVpToken(credential.data, credentialId);
+    // A credential WAS presented but we couldn't read a vp_token out of it — a
+    // malformed/unsupported response shape, not a dismissal. Surface it, don't fall back.
+    if (vpToken == null) return { ok: false, reason: 'malformed' };
+    verifyBody = { protocol: usedProtocol, vp_token: vpToken };
+  }
 
   // 3. Post the presentation back for verification.
   try {
     const res = await doFetch(verifyPath, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ vp_token: vpToken }),
+      body: JSON.stringify(verifyBody),
       signal,
     });
     const body = (await res.json().catch(() => ({}))) as { ok?: boolean; outcome?: unknown };
