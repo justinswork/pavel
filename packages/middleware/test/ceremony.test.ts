@@ -23,6 +23,17 @@ function buildApp(trustAnchors: string[], origin: string = ORIGIN): Express {
   return app;
 }
 
+type RequestBody = {
+  body: { requests: Array<{ protocol: string; data: Record<string, unknown> }> };
+};
+const oid4vpNonce = (r: RequestBody): string =>
+  (r.body.requests.find((x) => x.protocol === 'openid4vp-v1-unsigned')!.data as { nonce: string }).nonce;
+const isoRequest = (r: RequestBody): { deviceRequest: string; encryptionInfo: string } =>
+  r.body.requests.find((x) => x.protocol === 'org-iso-mdoc')!.data as {
+    deviceRequest: string;
+    encryptionInfo: string;
+  };
+
 /** Run the wallet side of the ceremony against a challenge, returning the vp_token. */
 async function present(
   authority: MockAuthority,
@@ -43,8 +54,9 @@ describe('pavel middleware ceremony', () => {
 
     // Mint the challenge, present against it, verify.
     const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
-    expect(reqRes.body.nonce).toBeTruthy();
-    const vpToken = await present(authority, reqRes.body.nonce);
+    const nonce = oid4vpNonce(reqRes);
+    expect(nonce).toBeTruthy();
+    const vpToken = await present(authority, nonce);
 
     await agent
       .post('/pavel/verify')
@@ -65,7 +77,7 @@ describe('pavel middleware ceremony', () => {
     const agent = request.agent(buildApp([good.trustAnchor]));
 
     const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
-    const vpToken = await present(evil, reqRes.body.nonce);
+    const vpToken = await present(evil, oid4vpNonce(reqRes));
 
     await agent
       .post('/pavel/verify')
@@ -99,13 +111,38 @@ describe('pavel middleware ceremony', () => {
     const agent = request.agent(buildApp([authority.trustAnchor], `${ORIGIN}/`));
 
     const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
-    const vpToken = await present(authority, reqRes.body.nonce);
+    const vpToken = await present(authority, oid4vpNonce(reqRes));
 
     await agent
       .post('/pavel/verify')
       .send({ vp_token: vpToken })
       .expect(200)
       .expect((res) => expect(res.body).toEqual({ ok: true, outcome: 'verified' }));
+  });
+
+  it('verifies an org-iso-mdoc (Safari) presentation through the endpoints', async () => {
+    const authority = await MockAuthority.create();
+    const agent = request.agent(buildApp([authority.trustAnchor]));
+
+    const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
+    const iso = isoRequest(reqRes);
+    const wallet = new MockWallet(await authority.issueMdl({ ageOver: [18, 21] }));
+    const response = await wallet.presentIso({
+      encryptionInfoBase64Url: iso.encryptionInfo,
+      origin: ORIGIN,
+      disclose: ['age_over_21'],
+    });
+
+    await agent
+      .post('/pavel/verify')
+      .send({ protocol: 'org-iso-mdoc', response })
+      .expect(200)
+      .expect((res) => expect(res.body).toEqual({ ok: true, outcome: 'verified' }));
+
+    await agent
+      .post('/gated')
+      .expect(200)
+      .expect((res) => expect(res.body.content).toBe('secret'));
   });
 
   it('401s with a machine-readable hint when unverified', async () => {

@@ -9,7 +9,9 @@ import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import {
   buildAgeRequest,
+  buildIsoMdocAgeRequest,
   verifyPresentation,
+  verifyIsoMdocPresentation,
   createOwfMdocBackend,
 } from '@justinswork/pavel-core';
 import type { PavelOptions } from './types';
@@ -32,30 +34,44 @@ export function pavel(options: PavelOptions): Router {
   const backend = createOwfMdocBackend({ trustAnchors });
   const router = Router();
 
-  // GET /pavel/request?minAge=NN — mint a single-use nonce, return the request.
-  router.get('/pavel/request', (req, res) => {
+  // GET /pavel/request?minAge=NN — mint a single-use challenge. Offers BOTH DC-API
+  // protocols so the browser picks: openid4vp (Chrome) or org-iso-mdoc (Safari).
+  router.get('/pavel/request', async (req, res) => {
     const minAge = parseMinAge(req.query.minAge);
     if (minAge === null) {
       res.status(400).json({ error: 'invalid_min_age' });
       return;
     }
     const nonce = randomBytes(16).toString('base64url');
-    req.session.pavelPending = { nonce, minAge, expiresAt: Date.now() + nonceTtlMs };
-    res.json(buildAgeRequest({ minAge, nonce, origin, clientName }));
+    const openid4vp = buildAgeRequest({ minAge, nonce, origin, clientName });
+    const iso = await buildIsoMdocAgeRequest({ minAge });
+
+    req.session.pavelPending = {
+      nonce,
+      minAge,
+      expiresAt: Date.now() + nonceTtlMs,
+      isoEphemeralPrivateKeyJwk: iso.ephemeralPrivateKeyJwk,
+      isoEncryptionInfoBase64Url: iso.encryptionInfoBase64Url,
+    };
+
+    res.json({
+      requests: [
+        { protocol: 'openid4vp-v1-unsigned', data: openid4vp },
+        { protocol: 'org-iso-mdoc', data: iso.data },
+      ],
+    });
   });
 
-  // POST /pavel/verify { vp_token } — verify, set the session flag on success.
+  // POST /pavel/verify — verify a presentation, routing by protocol:
+  //   { vp_token }             → OpenID4VP (Chrome)
+  //   { protocol: 'org-iso-mdoc', response } → ISO 18013-7 encrypted (Safari)
   router.post('/pavel/verify', async (req, res) => {
     const pending = req.session.pavelPending;
-    const vpToken: unknown = (req.body as { vp_token?: unknown } | undefined)?.vp_token;
+    const body = (req.body ?? {}) as { protocol?: unknown; vp_token?: unknown; response?: unknown };
 
     if (!pending) {
-      // No nonce in flight → nothing to bind to; treat as replay/stale.
+      // No challenge in flight → nothing to bind to; treat as replay/stale.
       res.status(400).json({ ok: false, outcome: 'replay' });
-      return;
-    }
-    if (typeof vpToken !== 'string') {
-      res.status(400).json({ ok: false, outcome: 'malformed' });
       return;
     }
     if (pending.expiresAt < Date.now()) {
@@ -64,35 +80,55 @@ export function pavel(options: PavelOptions): Router {
       return;
     }
 
-    let outcome: string;
-    let predicate: string | undefined;
+    const isIso = body.protocol === 'org-iso-mdoc' || body.response !== undefined;
+
+    let result: { outcome: string; predicate?: string };
     try {
-      const result = await verifyPresentation(
-        vpToken,
-        { nonce: pending.nonce, expectedOrigin: origin, minAge: pending.minAge },
-        backend,
-      );
-      outcome = result.outcome;
-      predicate = result.predicate;
+      if (isIso) {
+        if (!pending.isoEphemeralPrivateKeyJwk || !pending.isoEncryptionInfoBase64Url) {
+          delete req.session.pavelPending;
+          res.status(400).json({ ok: false, outcome: 'malformed' });
+          return;
+        }
+        result = await verifyIsoMdocPresentation({
+          encryptedResponse: body.response,
+          ephemeralPrivateKeyJwk: pending.isoEphemeralPrivateKeyJwk,
+          encryptionInfoBase64Url: pending.isoEncryptionInfoBase64Url,
+          expectedOrigin: origin,
+          minAge: pending.minAge,
+          trustAnchors,
+        });
+      } else {
+        if (typeof body.vp_token !== 'string') {
+          delete req.session.pavelPending;
+          res.status(400).json({ ok: false, outcome: 'malformed' });
+          return;
+        }
+        result = await verifyPresentation(
+          body.vp_token,
+          { nonce: pending.nonce, expectedOrigin: origin, minAge: pending.minAge },
+          backend,
+        );
+      }
     } catch {
       delete req.session.pavelPending;
       res.status(500).json({ ok: false, outcome: 'malformed' });
       return;
     }
 
-    // Consume the nonce regardless of outcome — single use.
+    // Consume the challenge regardless of outcome — single use.
     delete req.session.pavelPending;
 
-    if (outcome === 'verified') {
+    if (result.outcome === 'verified') {
       req.session.pavel = {
         verified: true,
         verifiedMinAge: pending.minAge,
         verifiedAt: Date.now(),
       };
-      res.json({ ok: true, outcome });
+      res.json({ ok: true, outcome: result.outcome });
       return;
     }
-    res.status(400).json({ ok: false, outcome, predicate });
+    res.status(400).json({ ok: false, outcome: result.outcome, predicate: result.predicate });
   });
 
   return router;

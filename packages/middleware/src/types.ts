@@ -34,6 +34,10 @@ export interface PendingRequest {
   nonce: string;
   minAge: number;
   expiresAt: number;
+  /** ISO 18013-7 (org-iso-mdoc) reader ephemeral private key, to decrypt the response. */
+  isoEphemeralPrivateKeyJwk?: Record<string, unknown>;
+  /** The ISO EncryptionInfo string, to rebuild the handover transcript on verify. */
+  isoEncryptionInfoBase64Url?: string;
 }
 
 // Augment express-session so req.session carries our fields with types.
