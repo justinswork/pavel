@@ -143,6 +143,19 @@ export function parseEncryptedResponse(data: unknown): { enc: Uint8Array; cipher
   return { enc, ciphertext };
 }
 
+/** Dev aid: log the DeviceResponse's issuer cert chain (x5chain) as PEM. */
+function logIssuerChainPem(response: DeviceResponse): void {
+  try {
+    const chain = response.documents?.[0]?.issuerSigned.issuerAuth.x5chain ?? [];
+    for (const der of chain) {
+      const b64 = (Buffer.from(der).toString('base64').match(/.{1,64}/g) ?? []).join('\n');
+      console.log(`[pavel iso issuer cert]\n-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----`);
+    }
+  } catch {
+    /* dev aid only */
+  }
+}
+
 /** Read a key that may be a number or string, from a decoded Map or plain object. */
 function readKey(container: unknown, key: number | string): unknown {
   if (container instanceof Map) {
@@ -228,6 +241,12 @@ export async function verifyIsoMdocPresentation(params: {
   } catch {
     // Couldn't decrypt or decode → treat as malformed (never reveals more).
     return outcomeFor({ ...NOT_DECODED }, params.minAge);
+  }
+
+  // Dev aid: with PAVEL_DEBUG_ISO_CERTS set, print the presented issuer cert chain as
+  // PEM so a tester can pin an otherwise-untrusted wallet's root (e.g. Multipaz).
+  if (typeof process !== 'undefined' && process.env?.PAVEL_DEBUG_ISO_CERTS) {
+    logIssuerChainPem(response);
   }
 
   const raw = await verifyDecodedResponse({
