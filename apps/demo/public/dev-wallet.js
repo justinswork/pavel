@@ -71,7 +71,10 @@
     try {
       const r = await fetch(`/pavel/request?minAge=${encodeURIComponent(minAge)}`);
       if (!r.ok) return { ok: false, reason: 'request_failed' };
-      authRequest = await r.json();
+      const fetched = await r.json();
+      // The server now offers both protocols; the dev wallet mirrors the openid4vp one.
+      authRequest =
+        fetched?.requests?.find((x) => x.protocol === 'openid4vp-v1-unsigned')?.data ?? fetched;
     } catch {
       return { ok: false, reason: 'request_failed' };
     }
