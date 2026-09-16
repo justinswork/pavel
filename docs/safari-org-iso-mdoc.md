@@ -1,7 +1,10 @@
 # Safari support — ISO 18013-7 Annex C (`org-iso-mdoc`)
 
-**Status:** implemented and validated end-to-end via the mock wallet; **not yet
-confirmed against real Safari** (see Residuals). Chrome (`openid4vp`) is unaffected.
+**Status:** implemented and **confirmed end-to-end against real Safari** — a green
+`verified` on an iPad (Safari 26), presenting from the Multipaz wallet on Android
+over the cross-device QR. Also validated offline via the mock wallet. Chrome
+(`openid4vp`) is unaffected. One residual remains (iOS-native credential — see
+Residuals).
 
 ## Why this exists
 
@@ -57,16 +60,19 @@ and open its wallet — the milestone this unblocks.
 
 ## Residuals (honest gaps)
 
-1. **Real-Safari byte interop is unverified.** The CBOR structures follow the ISO
-   spec and the Animo reference impl, and round-trip through our own encode/decode —
-   but the first real-Safari run may reveal a mismatch (e.g. the COSE_Key `alg`
-   field, or the response wrapper). The `onDiagnostic` → `/debug/log` path logs the
-   raw wallet response so any mismatch is diagnosable, and `parseEncryptedResponse`
-   is intentionally tolerant of wrapper shapes.
-2. **iOS has no test-credential story.** There's no CMWallet-style sideload; a real
-   Apple Wallet ID would verify structurally but return `untrusted_issuer` (its DMV
-   root isn't one we trust). So a green `verified` *on the iPad* needs a trusted test
-   credential in an iOS wallet — a separate problem from this code.
+1. **iOS has no on-device test-credential story.** The real-Safari run above worked
+   by presenting from the Multipaz wallet on an Android phone over Safari's
+   cross-device QR — not from a wallet on the iPad itself. There's no CMWallet-style
+   sideload on iOS, and a real Apple Wallet ID would verify structurally but return
+   `untrusted_issuer` (its DMV root isn't one we trust). So a green `verified` from a
+   wallet *on the iPad* still needs a trusted test credential in an iOS wallet — a
+   separate provisioning problem from this code.
+
+Real-Safari byte interop, previously the main open risk here, is now **confirmed**:
+the CBOR/HPKE wire format decoded and verified on the first real-Safari run with no
+tweak needed. The `onDiagnostic` → `/debug/log` path still logs the raw wallet
+response, and `parseEncryptedResponse` stays tolerant of wrapper shapes, so any
+future wallet quirk remains diagnosable.
 
 ## References
 
