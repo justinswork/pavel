@@ -160,7 +160,7 @@ app.get('/zk-age.js', (_req, res) => {
 // DEV ONLY: the browser SDK ships DC-API diagnostics here so on-device runs are
 // visible in this terminal (the phone has no console we can read).
 app.post('/debug/log', (req, res) => {
-  console.log('[dc-api debug]', JSON.stringify(req.body ?? {}).slice(0, 6000));
+  console.log('[dc-api debug]', JSON.stringify(req.body ?? {}).slice(0, 20000));
   res.json({ ok: true });
 });
 

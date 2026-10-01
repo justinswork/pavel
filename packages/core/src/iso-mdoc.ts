@@ -228,18 +228,24 @@ export async function verifyIsoMdocPresentation(params: {
     mdocContext,
   );
 
+  const debug = typeof process !== 'undefined' && !!process.env?.PAVEL_DEBUG_ISO;
+
   let response: DeviceResponse;
   try {
     const { enc, ciphertext } = parseEncryptedResponse(params.encryptedResponse);
+    if (debug) console.log(`[pavel iso] parsed: enc=${enc.length}B ciphertext=${ciphertext.length}B`);
     const plaintext = await hpkeOpen({
       recipientPrivateKeyJwk: params.ephemeralPrivateKeyJwk,
       enc,
       info: transcript.encode(),
       ciphertext,
     });
+    if (debug) console.log(`[pavel iso] hpke opened: plaintext=${plaintext.length}B`);
     response = DeviceResponse.decode(plaintext);
-  } catch {
+    if (debug) console.log(`[pavel iso] decoded docType=${response.documents?.[0]?.docType}`);
+  } catch (err) {
     // Couldn't decrypt or decode → treat as malformed (never reveals more).
+    if (debug) console.log(`[pavel iso] decrypt/decode FAILED: ${(err as Error)?.message ?? err}`);
     return outcomeFor({ ...NOT_DECODED }, params.minAge);
   }
 
@@ -254,5 +260,9 @@ export async function verifyIsoMdocPresentation(params: {
     sessionTranscript: transcript,
     trustedIssuance: params.trustAnchors.map(pemToDer),
   });
+  if (debug) {
+    const { ageClaims, ...flags } = raw;
+    console.log(`[pavel iso] verify flags: ${JSON.stringify(flags)} ageClaims=${JSON.stringify(ageClaims)}`);
+  }
   return outcomeFor(raw, params.minAge);
 }
