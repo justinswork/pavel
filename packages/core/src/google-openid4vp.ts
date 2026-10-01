@@ -20,9 +20,22 @@
  * Everything here is identical across both, so the same code promotes to real IDs.
  */
 import { createHash } from 'node:crypto';
-import { SignJWT, calculateJwkThumbprint, exportJWK, generateKeyPair, importPKCS8 } from 'jose';
+import {
+  SignJWT,
+  calculateJwkThumbprint,
+  compactDecrypt,
+  exportJWK,
+  generateKeyPair,
+  importJWK,
+  importPKCS8,
+} from 'jose';
+import { DeviceResponse, SessionTranscript } from '@owf/mdoc';
 import { MDL_DOCTYPE, MDL_NAMESPACE } from './backend';
+import { mdocContext } from './mdoc-context';
 import { agePredicate, assertValidMinAge } from './request';
+import { outcomeFor } from './pipeline';
+import type { VerifyResult } from './types';
+import { NOT_DECODED, pemToDer, verifyDecodedResponse } from './verify-shared';
 
 /** The registered reader's signing identity (what goes in the JAR + x5c). */
 export interface GoogleReaderIdentity {
@@ -146,4 +159,97 @@ export async function buildGoogleAgeRequest(params: BuildGoogleRequestParams): P
     encryptionJwkThumbprint,
     nonce: params.nonce,
   };
+}
+
+/** Read a field from a Map or plain object. */
+function getField(container: unknown, ...keys: string[]): unknown {
+  if (container instanceof Map) {
+    for (const k of keys) if (container.has(k)) return container.get(k);
+  } else if (container && typeof container === 'object') {
+    const obj = container as Record<string, unknown>;
+    for (const k of keys) if (k in obj) return obj[k];
+  }
+  return undefined;
+}
+
+/** A compact JWE has exactly five base64url segments separated by dots. */
+function looksLikeCompactJwe(s: string): boolean {
+  return s.split('.').length === 5;
+}
+
+/** Pull the compact-JWE string out of whatever wrapper the response arrives in. */
+function extractJweCompact(data: unknown): string {
+  if (typeof data === 'string') {
+    if (!looksLikeCompactJwe(data)) throw new Error('response is not a compact JWE');
+    return data;
+  }
+  const inner = getField(data, 'response', 'Response', 'data', 'vp_token');
+  if (typeof inner === 'string' && looksLikeCompactJwe(inner)) return inner;
+  throw new Error('no compact JWE found in response');
+}
+
+/**
+ * Extract the base64url mdoc from a decrypted `vp_token`. Per DCQL it's keyed by the
+ * credential id (we use "age_check") → array of presentations; tolerate a bare string
+ * or array too.
+ */
+function extractMdocFromVpToken(vpToken: unknown): string {
+  if (typeof vpToken === 'string') return vpToken;
+  if (Array.isArray(vpToken)) {
+    const first = vpToken[0];
+    if (typeof first === 'string') return first;
+  }
+  if (vpToken && typeof vpToken === 'object') {
+    const first = Object.values(vpToken as Record<string, unknown>)[0];
+    if (typeof first === 'string') return first;
+    if (Array.isArray(first) && typeof first[0] === 'string') return first[0];
+  }
+  throw new Error('no mdoc presentation in vp_token');
+}
+
+/**
+ * Verify a Google Wallet signed/encrypted OpenID4VP presentation end to end: derive the
+ * encryption-key thumbprint, rebuild the DC-API transcript (origin + nonce + thumbprint),
+ * JWE-decrypt the response, decode the vp_token, and run the shared verifier.
+ */
+export async function verifyGooglePresentation(params: {
+  /** The wallet's encrypted response: a compact JWE string, or a wrapper holding one. */
+  encryptedResponse: unknown;
+  /** The encryption private key returned by buildGoogleAgeRequest (kept server-side). */
+  encryptionPrivateKeyJwk: Record<string, unknown>;
+  /** The registered RP origin the presentation must be bound to. */
+  expectedOrigin: string;
+  /** The nonce minted for this ceremony. */
+  nonce: string;
+  minAge: number;
+  /** Trusted IACA roots (PEM). */
+  trustAnchors: string[];
+}): Promise<VerifyResult> {
+  // The transcript binds the SAME encryption-key thumbprint the request advertised.
+  const { d: _d, ...pubJwk } = params.encryptionPrivateKeyJwk;
+  const thumbB64url = await calculateJwkThumbprint(pubJwk as Parameters<typeof calculateJwkThumbprint>[0], 'sha256');
+  const sessionTranscript = await SessionTranscript.forOid4VpDcApi(
+    { origin: params.expectedOrigin, nonce: params.nonce, jwkThumbprint: b64urlToBytes(thumbB64url) },
+    mdocContext,
+  );
+
+  let response: DeviceResponse;
+  try {
+    const jwe = extractJweCompact(params.encryptedResponse);
+    const key = await importJWK(params.encryptionPrivateKeyJwk, 'ECDH-ES');
+    const { plaintext } = await compactDecrypt(jwe, key);
+    const payload = JSON.parse(new TextDecoder().decode(plaintext)) as unknown;
+    const mdocB64url = extractMdocFromVpToken(getField(payload, 'vp_token'));
+    response = DeviceResponse.fromEncodedForOid4Vp(mdocB64url);
+  } catch {
+    // Couldn't decrypt or decode → malformed (never reveals more).
+    return outcomeFor({ ...NOT_DECODED }, params.minAge);
+  }
+
+  const raw = await verifyDecodedResponse({
+    response,
+    sessionTranscript,
+    trustedIssuance: params.trustAnchors.map(pemToDer),
+  });
+  return outcomeFor(raw, params.minAge);
 }

@@ -7,6 +7,7 @@
  * base64url vp_token as it would appear over OpenID4VP.
  */
 import { Holder, DeviceRequest, DocRequest, ItemsRequest, SessionTranscript } from '@owf/mdoc';
+import { CompactEncrypt, importJWK } from 'jose';
 import { dcApiSessionTranscript, mdocContext, sealIsoMdocResponse } from '@justinswork/pavel-core';
 import type { IssuedMdl } from './authority';
 
@@ -84,5 +85,41 @@ export class MockWallet {
       mdocContext,
     );
     return sealIsoMdocResponse({ deviceResponseBytes: deviceResponse.encode(), encryptionInfoBase64Url, origin });
+  }
+
+  /**
+   * Present under the Google Wallet "real ID" flow (signed/encrypted OpenID4VP): bind
+   * deviceAuth to the DC-API transcript INCLUDING the reader's encryption-key thumbprint,
+   * then JWE-encrypt { vp_token } to the reader's encryption public key. Returns the
+   * compact JWE, standing in for Google Wallet's encrypted response.
+   */
+  async presentGoogle({
+    origin,
+    nonce,
+    jwkThumbprint,
+    encryptionPublicJwk,
+    disclose,
+  }: {
+    origin: string;
+    nonce: string;
+    jwkThumbprint: Uint8Array;
+    encryptionPublicJwk: Record<string, unknown>;
+    disclose: string[];
+  }): Promise<string> {
+    const sessionTranscript = await SessionTranscript.forOid4VpDcApi({ origin, nonce, jwkThumbprint }, mdocContext);
+    const deviceResponse = await Holder.createDeviceResponseForDeviceRequest(
+      {
+        deviceRequest: deviceRequest(disclose),
+        issuerSigned: [this.credential.issuerSigned],
+        sessionTranscript,
+        signature: { signingKey: this.credential.devicePrivateKey },
+      },
+      mdocContext,
+    );
+    const plaintext = new TextEncoder().encode(
+      JSON.stringify({ vp_token: { age_check: [deviceResponse.encodedForOid4Vp] } }),
+    );
+    const recipient = await importJWK(encryptionPublicJwk, 'ECDH-ES');
+    return new CompactEncrypt(plaintext).setProtectedHeader({ alg: 'ECDH-ES', enc: 'A128GCM' }).encrypt(recipient);
   }
 }
