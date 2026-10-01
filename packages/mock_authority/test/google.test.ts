@@ -5,33 +5,12 @@
  * The mock wallet stands in for Google Wallet's OS wallet — no device needed.
  */
 import 'reflect-metadata';
-import { webcrypto } from 'node:crypto';
 import { describe, it, expect } from 'vitest';
-import * as x509 from '@peculiar/x509';
 import { MockAuthority, MockWallet, type IssueMdlOptions } from '../src/index';
-import { buildGoogleAgeRequest, verifyGooglePresentation } from '@justinswork/pavel-core';
+import { buildGoogleAgeRequest, createGoogleReader, verifyGooglePresentation } from '@justinswork/pavel-core';
 
 const ORIGIN = 'https://shop.example';
 const METADATA = 'c2FtcGxlLWd3LXJwLW1ldGFkYXRh';
-
-/** Mint a throwaway self-signed P-256 reader cert + its PKCS#8 PEM. */
-async function makeReader() {
-  const keys = (await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
-    'sign',
-    'verify',
-  ])) as webcrypto.CryptoKeyPair;
-  const cert = await x509.X509CertificateGenerator.createSelfSigned({
-    serialNumber: '01',
-    name: 'CN=PAVEL Test Reader',
-    notBefore: new Date(Date.now() - 60_000),
-    notAfter: new Date(Date.now() + 86_400_000),
-    keys,
-    signingAlgorithm: { name: 'ECDSA', hash: 'SHA-256' },
-  });
-  const pkcs8 = new Uint8Array(await webcrypto.subtle.exportKey('pkcs8', keys.privateKey));
-  const pem = `-----BEGIN PRIVATE KEY-----\n${(Buffer.from(pkcs8).toString('base64').match(/.{1,64}/g) ?? []).join('\n')}\n-----END PRIVATE KEY-----`;
-  return { privateKeyPkcs8Pem: pem, certChainB64: [Buffer.from(new Uint8Array(cert.rawData)).toString('base64')] };
-}
 
 const publicOf = (jwk: Record<string, unknown>) => {
   const { d: _d, ...pub } = jwk;
@@ -43,7 +22,7 @@ async function ceremony(
   opts: { issue?: IssueMdlOptions; disclose?: string[]; presentOrigin?: string } = {},
 ) {
   const wallet = new MockWallet(await authority.issueMdl(opts.issue ?? { ageOver: [18, 21] }));
-  const reader = await makeReader();
+  const { reader } = await createGoogleReader();
   const built = await buildGoogleAgeRequest({ minAge: 21, nonce: 'nonce-1', origin: ORIGIN, reader, gwRpMetadataBytes: METADATA });
   const encryptedResponse = await wallet.presentGoogle({
     origin: opts.presentOrigin ?? ORIGIN,
