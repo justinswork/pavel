@@ -7,7 +7,7 @@
  * base64url vp_token as it would appear over OpenID4VP.
  */
 import { Holder, DeviceRequest, DocRequest, ItemsRequest, SessionTranscript } from '@owf/mdoc';
-import { CompactEncrypt, importJWK } from 'jose';
+import { CompactEncrypt, calculateJwkThumbprint, importJWK } from 'jose';
 import { dcApiSessionTranscript, mdocContext, sealIsoMdocResponse } from '@justinswork/pavel-core';
 import type { IssuedMdl } from './authority';
 
@@ -96,16 +96,21 @@ export class MockWallet {
   async presentGoogle({
     origin,
     nonce,
-    jwkThumbprint,
     encryptionPublicJwk,
     disclose,
   }: {
     origin: string;
     nonce: string;
-    jwkThumbprint: Uint8Array;
     encryptionPublicJwk: Record<string, unknown>;
     disclose: string[];
   }): Promise<string> {
+    // The transcript binds the encryption-key thumbprint; derive it from the public JWK
+    // so callers only pass the key, never a separately-computed thumbprint.
+    const thumbB64url = await calculateJwkThumbprint(
+      encryptionPublicJwk as Parameters<typeof calculateJwkThumbprint>[0],
+      'sha256',
+    );
+    const jwkThumbprint = new Uint8Array(Buffer.from(thumbB64url, 'base64url'));
     const sessionTranscript = await SessionTranscript.forOid4VpDcApi({ origin, nonce, jwkThumbprint }, mdocContext);
     const deviceResponse = await Holder.createDeviceResponseForDeviceRequest(
       {

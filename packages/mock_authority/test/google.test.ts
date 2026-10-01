@@ -27,7 +27,6 @@ async function ceremony(
   const encryptedResponse = await wallet.presentGoogle({
     origin: opts.presentOrigin ?? ORIGIN,
     nonce: 'nonce-1',
-    jwkThumbprint: built.encryptionJwkThumbprint,
     encryptionPublicJwk: publicOf(built.encryptionPrivateKeyJwk),
     disclose: opts.disclose ?? ['age_over_21'],
   });

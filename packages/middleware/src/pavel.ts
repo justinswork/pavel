@@ -10,8 +10,10 @@ import { Router } from 'express';
 import {
   buildAgeRequest,
   buildIsoMdocAgeRequest,
+  buildGoogleAgeRequest,
   verifyPresentation,
   verifyIsoMdocPresentation,
+  verifyGooglePresentation,
   createOwfMdocBackend,
 } from '@justinswork/pavel-core';
 import type { PavelOptions } from './types';
@@ -26,7 +28,7 @@ function parseMinAge(raw: unknown): number | null {
 
 /** Mount the ceremony endpoints. Use with `app.use(pavel({ ... }))`. */
 export function pavel(options: PavelOptions): Router {
-  const { trustAnchors, clientName } = options;
+  const { trustAnchors, clientName, google } = options;
   // A web origin has no trailing slash; a stray one changes the DC-API handover
   // bytes so deviceAuth never matches — every presentation would read as replay.
   const origin = options.origin.replace(/\/+$/, '');
@@ -46,20 +48,34 @@ export function pavel(options: PavelOptions): Router {
     const openid4vp = buildAgeRequest({ minAge, nonce, origin, clientName });
     const iso = await buildIsoMdocAgeRequest({ minAge });
 
-    req.session.pavelPending = {
+    const pending = {
       nonce,
       minAge,
       expiresAt: Date.now() + nonceTtlMs,
       isoEphemeralPrivateKeyJwk: iso.ephemeralPrivateKeyJwk,
       isoEncryptionInfoBase64Url: iso.encryptionInfoBase64Url,
-    };
+    } as typeof req.session.pavelPending & object;
 
-    res.json({
-      requests: [
-        { protocol: 'openid4vp-v1-unsigned', data: openid4vp },
-        { protocol: 'org-iso-mdoc', data: iso.data },
-      ],
-    });
+    // Google Wallet "real ID" (signed/encrypted) — offered FIRST when configured, since
+    // Google Wallet processes the first request it recognizes. Other wallets (CMWallet,
+    // Safari) match their own protocol entry regardless of order.
+    const requests: Array<{ protocol: string; data: unknown }> = [];
+    if (google) {
+      const g = await buildGoogleAgeRequest({
+        minAge,
+        nonce,
+        origin,
+        reader: google.reader,
+        gwRpMetadataBytes: google.gwRpMetadataBytes,
+      });
+      pending.googleEncryptionPrivateKeyJwk = g.encryptionPrivateKeyJwk;
+      requests.push({ protocol: g.protocol, data: g.data });
+    }
+    requests.push({ protocol: 'openid4vp-v1-unsigned', data: openid4vp });
+    requests.push({ protocol: 'org-iso-mdoc', data: iso.data });
+
+    req.session.pavelPending = pending;
+    res.json({ requests });
   });
 
   // POST /pavel/verify — verify a presentation, routing by protocol:
@@ -80,11 +96,29 @@ export function pavel(options: PavelOptions): Router {
       return;
     }
 
-    const isIso = body.protocol === 'org-iso-mdoc' || body.response !== undefined;
+    // Route by protocol. Google (openid4vp-v1-signed) and ISO (org-iso-mdoc) both carry
+    // an encrypted `response`; the protocol string disambiguates. A bare `response` with
+    // no protocol is treated as ISO (back-compat).
+    const isGoogle = body.protocol === 'openid4vp-v1-signed';
+    const isIso = !isGoogle && (body.protocol === 'org-iso-mdoc' || body.response !== undefined);
 
     let result: { outcome: string; predicate?: string };
     try {
-      if (isIso) {
+      if (isGoogle) {
+        if (!pending.googleEncryptionPrivateKeyJwk) {
+          delete req.session.pavelPending;
+          res.status(400).json({ ok: false, outcome: 'malformed' });
+          return;
+        }
+        result = await verifyGooglePresentation({
+          encryptedResponse: body.response,
+          encryptionPrivateKeyJwk: pending.googleEncryptionPrivateKeyJwk,
+          expectedOrigin: origin,
+          nonce: pending.nonce,
+          minAge: pending.minAge,
+          trustAnchors,
+        });
+      } else if (isIso) {
         if (!pending.isoEphemeralPrivateKeyJwk || !pending.isoEncryptionInfoBase64Url) {
           delete req.session.pavelPending;
           res.status(400).json({ ok: false, outcome: 'malformed' });

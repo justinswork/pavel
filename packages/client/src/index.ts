@@ -174,10 +174,11 @@ export async function requestAgeProof(options: RequestAgeProofOptions): Promise<
   const usedProtocol = credential.protocol;
   options.onDiagnostic?.({ stage: 'walletResponse', data: { protocol: usedProtocol, data: credential.data } });
 
-  // Build the verify body per protocol: ISO forwards the raw encrypted response for
-  // the server to decrypt; OpenID4VP extracts the vp_token here.
+  // Build the verify body per protocol: encrypted transports (ISO, and Google's
+  // signed/encrypted OpenID4VP) forward the raw response for the server to decrypt;
+  // plain OpenID4VP extracts the vp_token here.
   let verifyBody: Record<string, unknown>;
-  if (usedProtocol === 'org-iso-mdoc') {
+  if (usedProtocol === 'org-iso-mdoc' || usedProtocol === 'openid4vp-v1-signed') {
     verifyBody = { protocol: usedProtocol, response: credential.data };
   } else {
     const vpToken = extractVpToken(credential.data, credentialId);

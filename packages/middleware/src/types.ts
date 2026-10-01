@@ -1,5 +1,7 @@
 /** Options and session types for the PAVEL Express middleware. */
 
+import type { GoogleVerifierConfig } from '@justinswork/pavel-core';
+
 export interface PavelOptions {
   /** Trusted IACA root certificates (PEM). Mock in dev, real issuer roots in prod. */
   trustAnchors: string[];
@@ -9,6 +11,12 @@ export interface PavelOptions {
   nonceTtlMs?: number;
   /** Verifier display name shown in the wallet consent prompt. */
   clientName?: string;
+  /**
+   * Optional Google Wallet "real ID" config (signed/encrypted OpenID4VP). When set, the
+   * request also offers the `openid4vp-v1-signed` protocol. Needs a registered reader cert
+   * + gw_rp_metadata_bytes (sandbox sample or production). Omit to keep the demo/test paths.
+   */
+  google?: GoogleVerifierConfig;
 }
 
 export interface RequireAgeProofOptions {
@@ -38,6 +46,8 @@ export interface PendingRequest {
   isoEphemeralPrivateKeyJwk?: Record<string, unknown>;
   /** The ISO EncryptionInfo string, to rebuild the handover transcript on verify. */
   isoEncryptionInfoBase64Url?: string;
+  /** Google Wallet response-encryption private key (JWK), to decrypt the JWE on verify. */
+  googleEncryptionPrivateKeyJwk?: Record<string, unknown>;
 }
 
 // Augment express-session so req.session carries our fields with types.

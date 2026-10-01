@@ -8,19 +8,25 @@ import express, { type Express } from 'express';
 import session from 'express-session';
 import request from 'supertest';
 import { MockAuthority, MockWallet } from '@justinswork/pavel-mock-authority';
+import { createGoogleReader, type GoogleVerifierConfig } from '@justinswork/pavel-core';
 import { pavel, requireAgeProof } from '../src/index';
 
 const ORIGIN = 'http://localhost';
 
-function buildApp(trustAnchors: string[], origin: string = ORIGIN): Express {
+function buildApp(trustAnchors: string[], origin: string = ORIGIN, google?: GoogleVerifierConfig): Express {
   const app = express();
   app.use(express.json());
   app.use(session({ secret: 'test-secret', resave: false, saveUninitialized: true }));
-  app.use(pavel({ trustAnchors, origin }));
+  app.use(pavel({ trustAnchors, origin, google }));
   app.post('/gated', requireAgeProof({ minAge: 21 }), (_req, res) => {
     res.json({ ok: true, content: 'secret' });
   });
   return app;
+}
+
+/** Decode a JWT payload without a library (test-only). */
+function jwtPayload(jwt: string): Record<string, any> {
+  return JSON.parse(Buffer.from(jwt.split('.')[1]!, 'base64url').toString('utf8'));
 }
 
 type RequestBody = {
@@ -136,6 +142,40 @@ describe('pavel middleware ceremony', () => {
     await agent
       .post('/pavel/verify')
       .send({ protocol: 'org-iso-mdoc', response })
+      .expect(200)
+      .expect((res) => expect(res.body).toEqual({ ok: true, outcome: 'verified' }));
+
+    await agent
+      .post('/gated')
+      .expect(200)
+      .expect((res) => expect(res.body.content).toBe('secret'));
+  });
+
+  it('verifies a Google Wallet (signed/encrypted OpenID4VP) presentation through the endpoints', async () => {
+    const authority = await MockAuthority.create();
+    const { reader } = await createGoogleReader();
+    const google: GoogleVerifierConfig = { origin: ORIGIN, reader, gwRpMetadataBytes: 'c2FtcGxl' };
+    const agent = request.agent(buildApp([authority.trustAnchor], ORIGIN, google));
+
+    const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
+    const entry = (reqRes.body.requests as Array<{ protocol: string; data: { request: string } }>).find(
+      (x) => x.protocol === 'openid4vp-v1-signed',
+    );
+    expect(entry).toBeTruthy(); // the signed protocol is offered first
+    const payload = jwtPayload(entry!.data.request);
+    const encPubJwk = payload.client_metadata.jwks.keys[0];
+
+    const wallet = new MockWallet(await authority.issueMdl({ ageOver: [18, 21] }));
+    const response = await wallet.presentGoogle({
+      origin: ORIGIN,
+      nonce: payload.nonce,
+      encryptionPublicJwk: encPubJwk,
+      disclose: ['age_over_21'],
+    });
+
+    await agent
+      .post('/pavel/verify')
+      .send({ protocol: 'openid4vp-v1-signed', response })
       .expect(200)
       .expect((res) => expect(res.body).toEqual({ ok: true, outcome: 'verified' }));
 

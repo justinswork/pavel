@@ -11,11 +11,17 @@
  * SDK; where no wallet exists it falls back to the dev wallet (see public/).
  */
 import { fileURLToPath } from 'node:url';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import session from 'express-session';
 import { pavel, requireAgeProof } from '@justinswork/pavel';
+import {
+  createGoogleReader,
+  readerFromPem,
+  type GoogleReaderIdentity,
+  type GoogleVerifierConfig,
+} from '@justinswork/pavel-core';
 import { MockAuthority, MockWallet } from '@justinswork/pavel-mock-authority';
 import { CATALOG, CATALOG_BY_ID, MIN_AGE } from './catalog.js';
 
@@ -55,6 +61,30 @@ function loadExtraTrustAnchors(): string[] {
 }
 const extraTrustAnchors = loadExtraTrustAnchors();
 
+// ── Optional Google Wallet "real ID" path (signed/encrypted OpenID4VP) ─────────
+// Enabled only when GW_RP_METADATA_BYTES is set (the sandbox SAMPLE string from
+// Google's sandbox docs, or the production value after registration). The reader cert
+// is generated once and persisted under .google-reader/ so it's stable across restarts.
+const GOOGLE_DIR = path.join(__dirname, '..', '.google-reader');
+async function loadGoogleConfig(): Promise<GoogleVerifierConfig | undefined> {
+  const gwRpMetadataBytes = process.env.GW_RP_METADATA_BYTES;
+  if (!gwRpMetadataBytes) return undefined;
+  const keyPath = path.join(GOOGLE_DIR, 'reader-key.pem');
+  const certPath = path.join(GOOGLE_DIR, 'reader-cert.pem');
+  let reader: GoogleReaderIdentity;
+  if (existsSync(keyPath) && existsSync(certPath)) {
+    reader = readerFromPem(readFileSync(keyPath, 'utf8'), [readFileSync(certPath, 'utf8')]);
+  } else {
+    const created = await createGoogleReader({ commonName: 'PAVEL Demo Reader (sandbox)' });
+    mkdirSync(GOOGLE_DIR, { recursive: true });
+    writeFileSync(keyPath, created.privateKeyPkcs8Pem);
+    writeFileSync(certPath, created.certPem);
+    reader = created.reader;
+  }
+  return { origin: ORIGIN, reader, gwRpMetadataBytes };
+}
+const googleConfig = await loadGoogleConfig();
+
 const app = express();
 app.use(express.json());
 app.use(
@@ -73,6 +103,7 @@ app.use(
     origin: ORIGIN,
     trustAnchors: [authority.trustAnchor, ...extraTrustAnchors],
     clientName: 'Cellar & Co.',
+    google: googleConfig,
   }),
 );
 
@@ -221,4 +252,9 @@ app.listen(PORT, () => {
   console.log(`PAVEL demo store running at ${ORIGIN}`);
   console.log(`  real middleware + verifier · dev wallet stands in for the OS wallet · min age ${MIN_AGE}`);
   console.log(`  trust anchors: MockAuthority + ${extraTrustAnchors.length} from trust-anchors/`);
+  console.log(
+    googleConfig
+      ? '  google wallet (real ID): ENABLED — offering openid4vp-v1-signed'
+      : '  google wallet (real ID): disabled — set GW_RP_METADATA_BYTES to enable',
+  );
 });
