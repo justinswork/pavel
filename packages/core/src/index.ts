@@ -10,3 +10,4 @@ export * from './session-transcript';
 export * from './hpke';
 export * from './backend-owf';
 export * from './iso-mdoc';
+export * from './google-openid4vp';
