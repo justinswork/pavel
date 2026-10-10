@@ -233,17 +233,37 @@ export async function verifyGooglePresentation(params: {
     mdocContext,
   );
 
+  const debug = typeof process !== 'undefined' && !!process.env?.PAVEL_DEBUG_GOOGLE;
+
   let response: DeviceResponse;
   try {
     const jwe = extractJweCompact(params.encryptedResponse);
+    if (debug) console.log(`[pavel google] jwe compact length=${jwe.length}`);
     const key = await importJWK(params.encryptionPrivateKeyJwk, 'ECDH-ES');
     const { plaintext } = await compactDecrypt(jwe, key);
+    if (debug) console.log(`[pavel google] jwe decrypted: plaintext=${plaintext.length}B`);
     const payload = JSON.parse(new TextDecoder().decode(plaintext)) as unknown;
     const mdocB64url = extractMdocFromVpToken(getField(payload, 'vp_token'));
     response = DeviceResponse.fromEncodedForOid4Vp(mdocB64url);
-  } catch {
+    if (debug) console.log(`[pavel google] decoded docType=${response.documents?.[0]?.docType}`);
+  } catch (err) {
     // Couldn't decrypt or decode → malformed (never reveals more).
+    if (debug) console.log(`[pavel google] decrypt/decode FAILED: ${(err as Error)?.message ?? err}`);
     return outcomeFor({ ...NOT_DECODED }, params.minAge);
+  }
+
+  // Dev aid: with PAVEL_DEBUG_ISO_CERTS set, print the presented issuer cert chain as PEM
+  // so a tester can pin an otherwise-untrusted sandbox issuer.
+  if (typeof process !== 'undefined' && process.env?.PAVEL_DEBUG_ISO_CERTS) {
+    try {
+      const chain = response.documents?.[0]?.issuerSigned.issuerAuth.x5chain ?? [];
+      for (const der of chain) {
+        const b64 = (Buffer.from(der).toString('base64').match(/.{1,64}/g) ?? []).join('\n');
+        console.log(`[pavel google issuer cert]\n-----BEGIN CERTIFICATE-----\n${b64}\n-----END CERTIFICATE-----`);
+      }
+    } catch {
+      /* dev aid only */
+    }
   }
 
   const raw = await verifyDecodedResponse({
@@ -251,5 +271,9 @@ export async function verifyGooglePresentation(params: {
     sessionTranscript,
     trustedIssuance: params.trustAnchors.map(pemToDer),
   });
+  if (debug) {
+    const { ageClaims, ...flags } = raw;
+    console.log(`[pavel google] verify flags: ${JSON.stringify(flags)} ageClaims=${JSON.stringify(ageClaims)}`);
+  }
   return outcomeFor(raw, params.minAge);
 }
