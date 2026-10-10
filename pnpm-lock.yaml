@@ -112,6 +112,9 @@ importers:
       '@justinswork/pavel-mock-authority':
         specifier: workspace:*
         version: link:../mock_authority
+      '@owf/mdoc':
+        specifier: ^0.7.0
+        version: 0.7.0
       '@types/express':
         specifier: ^4.17.21
         version: 4.17.25

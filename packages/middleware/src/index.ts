@@ -3,6 +3,7 @@
 export { pavel } from './pavel';
 export { requireAgeProof } from './gate';
 export type {
+  AppleVerifierConfig,
   PavelOptions,
   RequireAgeProofOptions,
   PavelSessionState,

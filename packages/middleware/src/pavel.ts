@@ -28,7 +28,7 @@ function parseMinAge(raw: unknown): number | null {
 
 /** Mount the ceremony endpoints. Use with `app.use(pavel({ ... }))`. */
 export function pavel(options: PavelOptions): Router {
-  const { trustAnchors, clientName, google } = options;
+  const { trustAnchors, clientName, google, apple } = options;
   // A web origin has no trailing slash; a stray one changes the DC-API handover
   // bytes so deviceAuth never matches — every presentation would read as replay.
   const origin = options.origin.replace(/\/+$/, '');
@@ -46,7 +46,8 @@ export function pavel(options: PavelOptions): Router {
     }
     const nonce = randomBytes(16).toString('base64url');
     const openid4vp = buildAgeRequest({ minAge, nonce, origin, clientName });
-    const iso = await buildIsoMdocAgeRequest({ minAge });
+    // Signed for this origin when an Apple certificate is configured (needed for real IDs).
+    const iso = await buildIsoMdocAgeRequest({ minAge, ...(apple ? { reader: apple.reader, origin } : {}) });
 
     const pending = {
       nonce,

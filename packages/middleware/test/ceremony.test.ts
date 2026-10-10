@@ -8,16 +8,22 @@ import express, { type Express } from 'express';
 import session from 'express-session';
 import request from 'supertest';
 import { MockAuthority, MockWallet } from '@justinswork/pavel-mock-authority';
+import { cborDecode } from '@owf/mdoc';
 import { createGoogleReader, type GoogleVerifierConfig } from '@justinswork/pavel-core';
-import { pavel, requireAgeProof } from '../src/index';
+import { pavel, requireAgeProof, type AppleVerifierConfig } from '../src/index';
 
 const ORIGIN = 'http://localhost';
 
-function buildApp(trustAnchors: string[], origin: string = ORIGIN, google?: GoogleVerifierConfig): Express {
+function buildApp(
+  trustAnchors: string[],
+  origin: string = ORIGIN,
+  google?: GoogleVerifierConfig,
+  apple?: AppleVerifierConfig,
+): Express {
   const app = express();
   app.use(express.json());
   app.use(session({ secret: 'test-secret', resave: false, saveUninitialized: true }));
-  app.use(pavel({ trustAnchors, origin, google }));
+  app.use(pavel({ trustAnchors, origin, google, apple }));
   app.post('/gated', requireAgeProof({ minAge: 21 }), (_req, res) => {
     res.json({ ok: true, content: 'secret' });
   });
@@ -183,6 +189,30 @@ describe('pavel middleware ceremony', () => {
       .post('/gated')
       .expect(200)
       .expect((res) => expect(res.body.content).toBe('secret'));
+  });
+
+  it('signs the org-iso-mdoc request when an Apple certificate is configured, and still verifies', async () => {
+    const authority = await MockAuthority.create();
+    const { reader } = await createGoogleReader({ commonName: 'PAVEL Test Apple Reader' });
+    const agent = request.agent(buildApp([authority.trustAnchor], ORIGIN, undefined, { reader }));
+
+    const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
+    const iso = isoRequest(reqRes);
+    const deviceRequest = cborDecode(new Uint8Array(Buffer.from(iso.deviceRequest, 'base64url'))) as Map<string, unknown>;
+    expect(deviceRequest.get('version')).toBe('1.1');
+    expect(deviceRequest.has('readerAuthAll')).toBe(true);
+
+    const wallet = new MockWallet(await authority.issueMdl({ ageOver: [18, 21] }));
+    const response = await wallet.presentIso({
+      encryptionInfoBase64Url: iso.encryptionInfo,
+      origin: ORIGIN,
+      disclose: ['age_over_21'],
+    });
+    await agent
+      .post('/pavel/verify')
+      .send({ protocol: 'org-iso-mdoc', response })
+      .expect(200)
+      .expect((res) => expect(res.body).toEqual({ ok: true, outcome: 'verified' }));
   });
 
   it('401s with a machine-readable hint when unverified', async () => {

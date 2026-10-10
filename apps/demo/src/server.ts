@@ -15,7 +15,7 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 
 import path from 'node:path';
 import express from 'express';
 import session from 'express-session';
-import { pavel, requireAgeProof } from '@justinswork/pavel';
+import { pavel, requireAgeProof, type AppleVerifierConfig } from '@justinswork/pavel';
 import {
   createGoogleReader,
   readerFromPem,
@@ -85,6 +85,21 @@ async function loadGoogleConfig(): Promise<GoogleVerifierConfig | undefined> {
 }
 const googleConfig = await loadGoogleConfig();
 
+// ── Optional Apple Wallet "real ID" request signing ─────────────────────────────
+// Enabled only when the key and certificate from Apple Business are placed in
+// .apple-reader/ (reader-key.pem, plus reader-cert.pem holding the leaf and any
+// intermediates). Without them, org-iso-mdoc requests stay unsigned, which test
+// wallets and Apple's developer profile accept.
+const APPLE_DIR = path.join(__dirname, '..', '.apple-reader');
+function loadAppleConfig(): AppleVerifierConfig | undefined {
+  const keyPath = path.join(APPLE_DIR, 'reader-key.pem');
+  const certPath = path.join(APPLE_DIR, 'reader-cert.pem');
+  if (!existsSync(keyPath) || !existsSync(certPath)) return undefined;
+  const chain = readFileSync(certPath, 'utf8').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
+  return { reader: readerFromPem(readFileSync(keyPath, 'utf8'), chain) };
+}
+const appleConfig = loadAppleConfig();
+
 const app = express();
 app.use(express.json());
 app.use(
@@ -104,6 +119,7 @@ app.use(
     trustAnchors: [authority.trustAnchor, ...extraTrustAnchors],
     clientName: 'Cellar & Co.',
     google: googleConfig,
+    apple: appleConfig,
   }),
 );
 
@@ -256,5 +272,10 @@ app.listen(PORT, () => {
     googleConfig
       ? '  google wallet (real ID): ENABLED — offering openid4vp-v1-signed'
       : '  google wallet (real ID): disabled — set GW_RP_METADATA_BYTES to enable',
+  );
+  console.log(
+    appleConfig
+      ? '  apple wallet (real ID): ENABLED — org-iso-mdoc requests are signed'
+      : '  apple wallet (real ID): disabled — add .apple-reader/reader-key.pem + reader-cert.pem to sign requests',
   );
 });

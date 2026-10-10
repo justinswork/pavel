@@ -25,3 +25,5 @@ Thumbs.db
 
 # Demo's generated sandbox reader cert (regenerated on first run)
 apps/demo/.google-reader/
+# Demo's Apple-issued reader key + certificate (never commit)
+apps/demo/.apple-reader/

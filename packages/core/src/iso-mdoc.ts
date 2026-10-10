@@ -30,6 +30,9 @@ import { agePredicate, assertValidMinAge } from './request';
 import { outcomeFor } from './pipeline';
 import type { VerifyResult } from './types';
 import { NOT_DECODED, pemToDer, verifyDecodedResponse } from './verify-shared';
+import { signIsoDeviceRequest, type IsoReaderIdentity } from './iso-reader-auth';
+
+export type { IsoReaderIdentity } from './iso-reader-auth';
 
 const b64urlToBytes = (s: string): Uint8Array => new Uint8Array(Buffer.from(s, 'base64url'));
 const bytesToB64url = (b: Uint8Array): string => Buffer.from(b).toString('base64url');
@@ -63,12 +66,21 @@ function coseKeyEc2Public(jwk: Record<string, unknown>): Map<number, unknown> {
 /**
  * Build the `org-iso-mdoc` request for an age predicate, generating the reader
  * ephemeral key + nonce and encoding the DeviceRequest and EncryptionInfo.
+ *
+ * With a `reader`, the request is signed (reader authentication) for this origin, which
+ * Apple Wallet requires before it releases a real ID. Without one it stays unsigned,
+ * which test wallets and Apple's developer profile accept.
  */
 export async function buildIsoMdocAgeRequest(params: {
   minAge: number;
   nonce?: Uint8Array;
+  /** Signing identity (e.g. the certificate Apple Business issues). Requires `origin`. */
+  reader?: IsoReaderIdentity;
+  /** The site origin the signature is bound to (no trailing slash). Required with `reader`. */
+  origin?: string;
 }): Promise<BuiltIsoMdocRequest> {
   assertValidMinAge(params.minAge);
+  if (params.reader && !params.origin) throw new Error('origin is required to sign the request');
   const nonce = params.nonce ?? webcrypto.getRandomValues(new Uint8Array(16));
 
   const keyPair = (await webcrypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, [
@@ -92,7 +104,7 @@ export async function buildIsoMdocAgeRequest(params: {
   ]);
   const encryptionInfoBase64Url = bytesToB64url(encryptionInfoBytes);
 
-  const deviceRequestBytes = DeviceRequest.create({
+  const unsignedDeviceRequest = DeviceRequest.create({
     docRequests: [
       DocRequest.create({
         itemsRequest: ItemsRequest.create({
@@ -102,6 +114,18 @@ export async function buildIsoMdocAgeRequest(params: {
       }),
     ],
   }).encode();
+
+  // The signature covers the same Annex C transcript the response is bound to.
+  const deviceRequestBytes = params.reader
+    ? await signIsoDeviceRequest({
+        deviceRequest: unsignedDeviceRequest,
+        sessionTranscript: await SessionTranscript.forIsoMdocDcApi(
+          { encryptionInfoBase64Url, origin: params.origin! },
+          mdocContext,
+        ),
+        reader: params.reader,
+      })
+    : unsignedDeviceRequest;
 
   return {
     data: { deviceRequest: bytesToB64url(deviceRequestBytes), encryptionInfo: encryptionInfoBase64Url },

@@ -1,6 +1,12 @@
 /** Options and session types for the PAVEL Express middleware. */
 
-import type { GoogleVerifierConfig } from '@justinswork/pavel-core';
+import type { GoogleVerifierConfig, IsoReaderIdentity } from '@justinswork/pavel-core';
+
+/** Apple Wallet "real ID" config: signs org-iso-mdoc requests with your Apple-issued certificate. */
+export interface AppleVerifierConfig {
+  /** The key and certificate chain from Apple Business (Verify with Wallet on the Web). */
+  reader: IsoReaderIdentity;
+}
 
 export interface PavelOptions {
   /** Trusted IACA root certificates (PEM). Mock in dev, real issuer roots in prod. */
@@ -17,6 +23,12 @@ export interface PavelOptions {
    * + gw_rp_metadata_bytes (sandbox sample or production). Omit to keep the demo/test paths.
    */
   google?: GoogleVerifierConfig;
+  /**
+   * Optional Apple Wallet "real ID" config. When set, org-iso-mdoc requests are signed
+   * (reader authentication), which Apple requires before releasing real IDs. Omit to keep
+   * unsigned requests, which test wallets and Apple's developer profile accept.
+   */
+  apple?: AppleVerifierConfig;
 }
 
 export interface RequireAgeProofOptions {
