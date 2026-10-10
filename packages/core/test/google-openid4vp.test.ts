@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import * as x509 from '@peculiar/x509';
 import { decodeJwt, decodeProtectedHeader, importX509, jwtVerify } from 'jose';
 import { buildGoogleAgeRequest } from '../src/google-openid4vp';
-import { MDL_DOCTYPE, MDL_NAMESPACE } from '../src/backend';
+import { GOOGLE_ID_PASS_DOCTYPE, MDL_DOCTYPE, MDL_NAMESPACE } from '../src/backend';
 
 x509.cryptoProvider.set(webcrypto as unknown as Parameters<typeof x509.cryptoProvider.set>[0]);
 
@@ -69,8 +69,11 @@ describe('buildGoogleAgeRequest (signed JAR request)', () => {
     expect(p.client_id).toMatch(/^x509_hash:/);
     expect(p.nonce).toBe('nonce-abc');
     expect(p.expected_origins).toEqual([ORIGIN]);
-    expect(p.dcql_query.credentials[0].meta.doctype_value).toBe(MDL_DOCTYPE);
-    expect(p.dcql_query.credentials[0].claims[0].path).toEqual([MDL_NAMESPACE, 'age_over_21']);
+    // Either an mDL or a Google ID Pass, each asking only for the age predicate.
+    const creds = p.dcql_query.credentials as Array<Record<string, any>>;
+    expect(creds.map((c) => c.meta.doctype_value)).toEqual([MDL_DOCTYPE, GOOGLE_ID_PASS_DOCTYPE]);
+    for (const c of creds) expect(c.claims).toEqual([{ path: [MDL_NAMESPACE, 'age_over_21'], intent_to_retain: false }]);
+    expect(p.dcql_query.credential_sets).toEqual([{ options: [['age_check'], ['age_check_id_pass']] }]);
     expect(p.client_metadata.gw_rp_metadata_bytes).toBe(SAMPLE_METADATA);
     const encKey = p.client_metadata.jwks.keys[0];
     expect(encKey.use).toBe('enc');

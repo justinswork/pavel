@@ -30,7 +30,7 @@ import {
   importPKCS8,
 } from 'jose';
 import { DeviceResponse, SessionTranscript } from '@owf/mdoc';
-import { MDL_DOCTYPE, MDL_NAMESPACE } from './backend';
+import { GOOGLE_ID_PASS_DOCTYPE, MDL_DOCTYPE, MDL_NAMESPACE } from './backend';
 import { mdocContext } from './mdoc-context';
 import { agePredicate, assertValidMinAge } from './request';
 import { outcomeFor } from './pipeline';
@@ -124,6 +124,8 @@ export async function buildGoogleAgeRequest(params: BuildGoogleRequestParams): P
     client_id: x509HashClientId(leafCertB64),
     nonce: params.nonce,
     expected_origins: [params.origin],
+    // Ask for EITHER a driver's license (mDL) OR Google's passport-derived ID Pass.
+    // Without credential_sets, DCQL would require both; each option names one credential.
     dcql_query: {
       credentials: [
         {
@@ -132,7 +134,14 @@ export async function buildGoogleAgeRequest(params: BuildGoogleRequestParams): P
           meta: { doctype_value: MDL_DOCTYPE },
           claims: [{ path: [MDL_NAMESPACE, agePredicate(params.minAge)], intent_to_retain: false }],
         },
+        {
+          id: 'age_check_id_pass',
+          format: 'mso_mdoc',
+          meta: { doctype_value: GOOGLE_ID_PASS_DOCTYPE },
+          claims: [{ path: [MDL_NAMESPACE, agePredicate(params.minAge)], intent_to_retain: false }],
+        },
       ],
+      credential_sets: [{ options: [['age_check'], ['age_check_id_pass']] }],
     },
     client_metadata: {
       jwks: { keys: [{ ...encPubJwk, use: 'enc', alg: 'ECDH-ES', kid: encKid }] },

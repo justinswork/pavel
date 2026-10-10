@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { outcomeFor, verifyPresentation } from '../src/pipeline';
-import { MDL_DOCTYPE, type RawVerification, type MdocBackend } from '../src/backend';
+import { GOOGLE_ID_PASS_DOCTYPE, MDL_DOCTYPE, type RawVerification, type MdocBackend } from '../src/backend';
 import type { VerifyContext } from '../src/types';
 
 /** A RawVerification where every check passed and the predicate is true. */
@@ -42,8 +42,15 @@ describe('outcomeFor — each failed check maps to its outcome', () => {
     expect(outcomeFor(validRaw({ decoded: false }), 21).outcome).toBe('malformed');
   });
 
-  it('malformed when the docType is not an mDL', () => {
+  it('malformed when the docType is not an accepted age credential', () => {
     expect(outcomeFor(validRaw({ docType: 'org.iso.23220.photoID' }), 21).outcome).toBe('malformed');
+  });
+
+  it('accepts a Google ID Pass the same as an mDL', () => {
+    expect(outcomeFor(validRaw({ docType: GOOGLE_ID_PASS_DOCTYPE }), 21)).toEqual({
+      outcome: 'verified',
+      predicate: 'age_over_21',
+    });
   });
 
   it('untrusted_issuer when the issuer does not chain to a trusted IACA', () => {

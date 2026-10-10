@@ -7,7 +7,12 @@
 import 'reflect-metadata';
 import { describe, it, expect } from 'vitest';
 import { MockAuthority, MockWallet, type IssueMdlOptions } from '../src/index';
-import { buildGoogleAgeRequest, createGoogleReader, verifyGooglePresentation } from '@justinswork/pavel-core';
+import {
+  GOOGLE_ID_PASS_DOCTYPE,
+  buildGoogleAgeRequest,
+  createGoogleReader,
+  verifyGooglePresentation,
+} from '@justinswork/pavel-core';
 
 const ORIGIN = 'https://shop.example';
 const METADATA = 'c2FtcGxlLWd3LXJwLW1ldGFkYXRh';
@@ -76,6 +81,24 @@ describe('Google Wallet (signed/encrypted OpenID4VP) end-to-end', () => {
     const authority = await MockAuthority.create();
     const { built, encryptedResponse } = await ceremony(authority);
     expect((await verify(authority, built, encryptedResponse, 'https://evil.example')).outcome).toBe('replay');
+  });
+
+  it('verified for a Google ID Pass (com.google.wallet.idcard.1)', async () => {
+    const authority = await MockAuthority.create();
+    const { built, encryptedResponse } = await ceremony(authority, {
+      issue: { docType: GOOGLE_ID_PASS_DOCTYPE, ageOver: [18, 21] },
+    });
+    expect(await verify(authority, built, encryptedResponse)).toEqual({ outcome: 'verified', predicate: 'age_over_21' });
+  });
+
+  it('predicate_unavailable for an ID Pass that only carries age_over_18', async () => {
+    // Google's docs only show age_over_18 for ID Passes; a 21+ check then has nothing to read.
+    const authority = await MockAuthority.create();
+    const { built, encryptedResponse } = await ceremony(authority, {
+      issue: { docType: GOOGLE_ID_PASS_DOCTYPE, ageOver: [18] },
+      disclose: ['age_over_18'],
+    });
+    expect((await verify(authority, built, encryptedResponse)).outcome).toBe('predicate_unavailable');
   });
 
   it('malformed for a garbage response', async () => {

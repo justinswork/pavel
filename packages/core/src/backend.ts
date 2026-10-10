@@ -10,6 +10,10 @@ import type { VerifyContext } from './types';
 
 export const MDL_DOCTYPE = 'org.iso.18013.5.1.mDL';
 export const MDL_NAMESPACE = 'org.iso.18013.5.1';
+/** Google Wallet's passport-derived "ID Pass": same namespace and age_over_NN elements as the mDL. */
+export const GOOGLE_ID_PASS_DOCTYPE = 'com.google.wallet.idcard.1';
+/** docTypes whose age_over_NN elements (in MDL_NAMESPACE) PAVEL accepts as an age attestation. */
+export const AGE_DOCTYPES: readonly string[] = [MDL_DOCTYPE, GOOGLE_ID_PASS_DOCTYPE];
 
 /** Backend-neutral result of verifying a presentation. */
 export interface RawVerification {

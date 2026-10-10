@@ -38,6 +38,11 @@ export interface MockAuthorityOptions {
 }
 
 export interface IssueMdlOptions {
+  /**
+   * The credential's docType. Default the ISO mDL; pass 'com.google.wallet.idcard.1' to mint a
+   * Google ID Pass (same namespace and age elements).
+   */
+  docType?: string;
   /** Which age_over_NN predicates to sign as true. Default [18, 21]. */
   ageOver?: number[];
   /** Extra/override claims in the mDL namespace. */
@@ -53,6 +58,8 @@ export interface IssuedMdl {
   issuerSigned: IssuerSigned;
   /** The holder device key the credential is bound to (used to present it). */
   devicePrivateKey: CoseKey;
+  /** The credential's docType (the wallet requests and presents under it). */
+  docType: string;
 }
 
 export class MockAuthority {
@@ -132,7 +139,8 @@ export class MockAuthority {
       ...options.claims,
     };
 
-    const issuerSigned = await new Issuer(MDL_DOCTYPE, mdocContext)
+    const docType = options.docType ?? MDL_DOCTYPE;
+    const issuerSigned = await new Issuer(docType, mdocContext)
       .addIssuerNamespace(MDL_NAMESPACE, claims)
       .sign({
         signingKey: this.dsPrivateKey,
@@ -147,6 +155,6 @@ export class MockAuthority {
         },
       });
 
-    return { issuerSigned, devicePrivateKey };
+    return { issuerSigned, devicePrivateKey, docType };
   }
 }

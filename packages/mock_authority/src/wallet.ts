@@ -11,7 +11,6 @@ import { CompactEncrypt, calculateJwkThumbprint, importJWK } from 'jose';
 import { dcApiSessionTranscript, mdocContext, sealIsoMdocResponse } from '@justinswork/pavel-core';
 import type { IssuedMdl } from './authority';
 
-const MDL_DOCTYPE = 'org.iso.18013.5.1.mDL';
 const MDL_NAMESPACE = 'org.iso.18013.5.1';
 
 export interface PresentOptions {
@@ -23,13 +22,13 @@ export interface PresentOptions {
   disclose: string[];
 }
 
-/** A device request limiting disclosure to the given elements (intent_to_retain: false). */
-function deviceRequest(disclose: string[]): DeviceRequest {
+/** A device request for the given docType, limiting disclosure to the given elements (intent_to_retain: false). */
+function deviceRequest(docType: string, disclose: string[]): DeviceRequest {
   return DeviceRequest.create({
     docRequests: [
       DocRequest.create({
         itemsRequest: ItemsRequest.create({
-          docType: MDL_DOCTYPE,
+          docType,
           namespaces: {
             [MDL_NAMESPACE]: Object.fromEntries(disclose.map((element) => [element, false])),
           },
@@ -47,7 +46,7 @@ export class MockWallet {
     const sessionTranscript = await dcApiSessionTranscript(origin, nonce);
     const deviceResponse = await Holder.createDeviceResponseForDeviceRequest(
       {
-        deviceRequest: deviceRequest(disclose),
+        deviceRequest: deviceRequest(this.credential.docType, disclose),
         issuerSigned: [this.credential.issuerSigned],
         sessionTranscript,
         signature: { signingKey: this.credential.devicePrivateKey },
@@ -77,7 +76,7 @@ export class MockWallet {
     );
     const deviceResponse = await Holder.createDeviceResponseForDeviceRequest(
       {
-        deviceRequest: deviceRequest(disclose),
+        deviceRequest: deviceRequest(this.credential.docType, disclose),
         issuerSigned: [this.credential.issuerSigned],
         sessionTranscript,
         signature: { signingKey: this.credential.devicePrivateKey },
@@ -114,7 +113,7 @@ export class MockWallet {
     const sessionTranscript = await SessionTranscript.forOid4VpDcApi({ origin, nonce, jwkThumbprint }, mdocContext);
     const deviceResponse = await Holder.createDeviceResponseForDeviceRequest(
       {
-        deviceRequest: deviceRequest(disclose),
+        deviceRequest: deviceRequest(this.credential.docType, disclose),
         issuerSigned: [this.credential.issuerSigned],
         sessionTranscript,
         signature: { signingKey: this.credential.devicePrivateKey },
