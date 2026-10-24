@@ -42,8 +42,10 @@ describe('buildAgeRequest', () => {
     expect(claims[0]!.path.at(-1)).toMatch(/^age_over_\d+$/);
   });
 
-  it('honors an encrypted response mode', () => {
-    expect(buildAgeRequest({ ...base, responseMode: 'dc_api.jwt' }).response_mode).toBe('dc_api.jwt');
+  it('only builds plaintext dc_api requests (encrypted responses go through buildGoogleAgeRequest)', () => {
+    // The plain verifier can't decrypt a JWE, so this builder must never request one.
+    expect(buildAgeRequest(base).response_mode).toBe('dc_api');
+    expect(buildAgeRequest({ ...base, responseMode: 'dc_api.jwt' } as never).response_mode).toBe('dc_api');
   });
 
   it('surfaces the verifier display name and origin in client_metadata', () => {

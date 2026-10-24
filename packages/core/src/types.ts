@@ -29,8 +29,6 @@ export interface BuildAgeRequestParams {
   nonce: string;
   /** Expected web origin, bound into the request. */
   origin: string;
-  /** `dc_api` (default) or `dc_api.jwt` for an encrypted response. */
-  responseMode?: 'dc_api' | 'dc_api.jwt';
   /** Verifier display name shown in the wallet consent prompt. */
   clientName?: string;
 }
@@ -38,7 +36,8 @@ export interface BuildAgeRequestParams {
 /** An OpenID4VP Authorization Request tailored for the DC API. */
 export interface AuthorizationRequest {
   response_type: 'vp_token';
-  response_mode: 'dc_api' | 'dc_api.jwt';
+  /** Always plaintext `dc_api`; the encrypted (dc_api.jwt) flow is buildGoogleAgeRequest. */
+  response_mode: 'dc_api';
   nonce: string;
   dcql_query: {
     credentials: Array<{

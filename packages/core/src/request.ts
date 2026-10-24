@@ -21,14 +21,14 @@ export function agePredicate(minAge: number): string {
  * claim — the age predicate — so it is not possible to over-collect.
  */
 export function buildAgeRequest(params: BuildAgeRequestParams): AuthorizationRequest {
-  const { minAge, nonce, origin, responseMode = 'dc_api', clientName } = params;
+  const { minAge, nonce, origin, clientName } = params;
   assertValidMinAge(minAge);
   if (!nonce) throw new Error('nonce is required');
   if (!origin) throw new Error('origin is required');
 
   return {
     response_type: 'vp_token',
-    response_mode: responseMode,
+    response_mode: 'dc_api',
     nonce,
     dcql_query: {
       credentials: [
