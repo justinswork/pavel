@@ -49,10 +49,63 @@ export function extractAgeClaims(response: DeviceResponse): Record<string, boole
 }
 
 /**
+ * The ISSUER_AUTH checks @owf/mdoc reports (same text for PASSED and FAILED), keyed by
+ * the verdict each one feeds. Matched by substring of the check text.
+ */
+const ISSUER_CHECKS = {
+  trustChain: 'trusted issuance chain',
+  certificateValid: 'Issuer certificate must be valid',
+  countryName: 'Country name',
+  signature: 'Issuer auth signature',
+  msoValidNow: 'valid at the time of verification',
+  msoSignedInCertValidity: 'within the validity period',
+} as const;
+
+type Assessment = Pick<VerificationAssessment, 'status' | 'category' | 'check'>;
+
+/**
+ * Turn @owf/mdoc's assessments into the security verdicts, FAIL-CLOSED: a verdict is true
+ * only when the checks behind it were positively reported PASSED (and none FAILED). An
+ * unrecognized FAILED issuer check counts against trust, so a reworded or new check in a
+ * library update can never silently let a credential through.
+ */
+export function classifyAssessments(
+  assessments: Assessment[],
+  threw: boolean,
+): Pick<RawVerification, 'issuerTrusted' | 'authentic' | 'withinValidity' | 'deviceBound'> {
+  const failed = assessments.filter((a) => a.status === 'FAILED');
+  const failedIn = (category: string) => failed.some((f) => f.category === category);
+  const passedIn = (category: string) =>
+    assessments.some((a) => a.status === 'PASSED' && a.category === category) && !failedIn(category);
+  const issuerPassed = (match: string) =>
+    assessments.some((a) => a.status === 'PASSED' && a.category === 'ISSUER_AUTH' && a.check.includes(match)) &&
+    !failed.some((f) => f.category === 'ISSUER_AUTH' && f.check.includes(match));
+  const known = Object.values(ISSUER_CHECKS);
+  const unknownIssuerFailure = failed.some(
+    (f) => f.category === 'ISSUER_AUTH' && !known.some((m) => f.check.includes(m)),
+  );
+
+  return {
+    issuerTrusted:
+      issuerPassed(ISSUER_CHECKS.trustChain) &&
+      issuerPassed(ISSUER_CHECKS.certificateValid) &&
+      issuerPassed(ISSUER_CHECKS.countryName) &&
+      !unknownIssuerFailure,
+    authentic:
+      issuerPassed(ISSUER_CHECKS.signature) &&
+      !failedIn('DATA_INTEGRITY') &&
+      !failedIn('DOCUMENT_FORMAT') &&
+      // A throw with no recorded failure is unexplained, so it can't count as authentic.
+      !(threw && failed.length === 0),
+    withinValidity:
+      issuerPassed(ISSUER_CHECKS.msoValidNow) && issuerPassed(ISSUER_CHECKS.msoSignedInCertValidity),
+    deviceBound: passedIn('DEVICE_AUTH'),
+  };
+}
+
+/**
  * Verify an already-decoded DeviceResponse against a transcript + trust anchors,
- * mapping @owf/mdoc's assessments onto RawVerification. @owf reports each check via
- * an onCheck callback with a stable `category`; we bucket by category, splitting the
- * ISSUER_AUTH category (cert trust vs. signature vs. MSO validity) by check text.
+ * mapping @owf/mdoc's assessments onto RawVerification via classifyAssessments.
  */
 export async function verifyDecodedResponse(params: {
   response: DeviceResponse;
@@ -63,7 +116,7 @@ export async function verifyDecodedResponse(params: {
   const docType = response.documents?.[0]?.docType;
   const ageClaims = extractAgeClaims(response);
 
-  const failed: VerificationAssessment[] = [];
+  const assessments: Assessment[] = [];
   let threw = false;
   try {
     await Verifier.verifyDeviceResponse(
@@ -73,7 +126,7 @@ export async function verifyDecodedResponse(params: {
         trustedCertificates: [{ issuance: trustedIssuance }],
         disableStatusValidation: true,
         onCheck: (item) => {
-          if (item.status === 'FAILED') failed.push(item);
+          assessments.push(item);
         },
       },
       mdocContext,
@@ -82,27 +135,5 @@ export async function verifyDecodedResponse(params: {
     threw = true;
   }
 
-  const failedIn = (category: VerificationAssessment['category']) =>
-    failed.some((f) => f.category === category);
-  const issuerAuthFailed = (match: string) =>
-    failed.some((f) => f.category === 'ISSUER_AUTH' && f.check.includes(match));
-
-  return {
-    decoded: true,
-    docType,
-    issuerTrusted:
-      !issuerAuthFailed('trusted issuance chain') &&
-      !issuerAuthFailed('Issuer certificate must be valid') &&
-      !issuerAuthFailed('Country name'),
-    authentic:
-      !issuerAuthFailed('signature is invalid') &&
-      !failedIn('DATA_INTEGRITY') &&
-      !failedIn('DOCUMENT_FORMAT') &&
-      !(threw && failed.length === 0),
-    withinValidity:
-      !issuerAuthFailed('valid at the time of verification') &&
-      !issuerAuthFailed('within the validity period'),
-    deviceBound: !failedIn('DEVICE_AUTH'),
-    ageClaims,
-  };
+  return { decoded: true, docType, ...classifyAssessments(assessments, threw), ageClaims };
 }

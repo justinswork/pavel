@@ -26,6 +26,16 @@ import { CoseKey, type MdocContext } from '@owf/mdoc';
 
 x509.cryptoProvider.set(globalThis.crypto as unknown as Parameters<typeof x509.cryptoProvider.set>[0]);
 
+/** A certificate that signs another must be a CA (basicConstraints cA) with keyCertSign if keyUsage is present. */
+function assertCanIssueCertificates(cert: x509.X509Certificate): void {
+  const basic = cert.getExtension(x509.BasicConstraintsExtension);
+  if (!basic?.ca) throw new Error(`Certificate "${cert.subject}" is not a CA but issues another certificate`);
+  const usage = cert.getExtension(x509.KeyUsagesExtension);
+  if (usage && !(usage.usages & x509.KeyUsageFlags.keyCertSign)) {
+    throw new Error(`Certificate "${cert.subject}" lacks keyCertSign but issues another certificate`);
+  }
+}
+
 export const mdocContext: MdocContext = {
   fetch,
   crypto: {
@@ -65,6 +75,7 @@ export const mdocContext: MdocContext = {
     },
     verifyCertificateChain: async (input) => {
       const { trustedCertificates, x5chain: certificateChain } = input;
+      const now = input.now ?? new Date();
       const leaf = certificateChain[0];
       if (!leaf) throw new Error('Certificate chain is empty');
       const parsedLeafCertificate = new x509.X509Certificate(leaf);
@@ -90,6 +101,12 @@ export const mdocContext: MdocContext = {
       for (let i = 0; i < parsedChain.length; i++) {
         const cert = parsedChain[i];
         if (!cert) continue;
+        // Every certificate in the path, the trust anchor included, must be in date.
+        if (now < cert.notBefore || now > cert.notAfter) {
+          throw new Error(`Certificate "${cert.subject}" is outside its validity period`);
+        }
+        // Every certificate that issues another must be a CA allowed to sign certificates.
+        if (i < parsedChain.length - 1) assertCanIssueCertificates(cert);
         const publicKey = previousCertificate ? previousCertificate.publicKey : undefined;
         const skip = i === 0 && trustedCertificates && !publicKey;
         if (!skip) await cert.verify({ publicKey });
