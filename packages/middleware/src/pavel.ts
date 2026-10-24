@@ -6,7 +6,7 @@
  * to pavel-core.
  */
 import { randomBytes } from 'node:crypto';
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import {
   buildAgeRequest,
   buildIsoMdocAgeRequest,
@@ -19,6 +19,24 @@ import {
 import type { PavelOptions } from './types';
 
 const DEFAULT_NONCE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Swap the session for one with a new ID, carrying the app's own session data (e.g. a cart)
+ * across. PAVEL's state is left behind: the caller writes the verified state afterwards.
+ */
+function regenerateSession(req: Request): Promise<void> {
+  const carried: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(req.session)) {
+    if (key !== 'cookie' && key !== 'pavel' && key !== 'pavelPending') carried[key] = value;
+  }
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) return reject(err);
+      Object.assign(req.session, carried);
+      resolve();
+    });
+  });
+}
 
 function parseMinAge(raw: unknown): number | null {
   const n = Number(raw);
@@ -155,10 +173,18 @@ export function pavel(options: PavelOptions): Router {
     delete req.session.pavelPending;
 
     if (result.outcome === 'verified') {
+      // The session gains privilege here, so give it a fresh ID (prevents session fixation).
+      try {
+        await regenerateSession(req);
+      } catch {
+        res.status(500).json({ ok: false, outcome: 'malformed' });
+        return;
+      }
       req.session.pavel = {
         verified: true,
         verifiedMinAge: pending.minAge,
         verifiedAt: Date.now(),
+        proofId: randomBytes(16).toString('base64url'),
       };
       res.json({ ok: true, outcome: result.outcome });
       return;

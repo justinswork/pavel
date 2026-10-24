@@ -47,6 +47,8 @@ export interface PavelSessionState {
   verified: boolean;
   verifiedMinAge?: number;
   verifiedAt?: number;
+  /** Random ID of this verification, so a forceReverify gate can claim it exactly once. */
+  proofId?: string;
 }
 
 /** What the server tracks while a ceremony is in flight. */

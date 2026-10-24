@@ -27,7 +27,36 @@ function buildApp(
   app.post('/gated', requireAgeProof({ minAge: 21 }), (_req, res) => {
     res.json({ ok: true, content: 'secret' });
   });
+  // One-shot gate; ?fail=1 makes the gated action itself fail (500).
+  app.post('/one-shot', requireAgeProof({ minAge: 21, forceReverify: true }), (req, res) => {
+    if (req.query.fail) {
+      res.status(500).json({ ok: false });
+      return;
+    }
+    res.json({ ok: true });
+  });
+  // App-owned session data, to check it survives session regeneration.
+  app.post('/stash', (req, res) => {
+    (req.session as unknown as Record<string, unknown>).stash = 'keep-me';
+    res.json({ ok: true });
+  });
+  app.get('/stash', (req, res) => {
+    res.json({ stash: (req.session as unknown as Record<string, unknown>).stash ?? null });
+  });
   return app;
+}
+
+/** The session cookie (name=value) from a response's Set-Cookie header. */
+function sessionCookie(res: { headers: Record<string, unknown> }): string | undefined {
+  const cookies = (res.headers['set-cookie'] as string[] | undefined) ?? [];
+  return cookies.find((c) => c.startsWith('connect.sid='))?.split(';')[0];
+}
+
+/** Run a full openid4vp ceremony on an agent and expect it verified. */
+async function verifyOn(agent: ReturnType<typeof request.agent>, authority: MockAuthority) {
+  const reqRes = await agent.get('/pavel/request?minAge=21').expect(200);
+  const vpToken = await present(authority, oid4vpNonce(reqRes));
+  return agent.post('/pavel/verify').send({ vp_token: vpToken }).expect(200);
 }
 
 /** Decode a JWT payload without a library (test-only). */
@@ -213,6 +242,43 @@ describe('pavel middleware ceremony', () => {
       .send({ protocol: 'org-iso-mdoc', response })
       .expect(200)
       .expect((res) => expect(res.body).toEqual({ ok: true, outcome: 'verified' }));
+  });
+
+  it('issues a new session ID on verification, keeps app session data, and the old ID stays unverified', async () => {
+    const authority = await MockAuthority.create();
+    const app = buildApp([authority.trustAnchor]);
+    const agent = request.agent(app);
+
+    const before = sessionCookie(await agent.post('/stash').expect(200));
+    expect(before).toBeTruthy();
+    const after = sessionCookie(await verifyOn(agent, authority));
+    expect(after).toBeTruthy();
+    expect(after).not.toBe(before); // fresh session ID
+
+    await agent.get('/stash').expect(200).expect((res) => expect(res.body.stash).toBe('keep-me'));
+    await agent.post('/gated').expect(200);
+    // Someone holding the pre-verification session ID (session fixation) gets nothing.
+    await request(app).post('/gated').set('Cookie', before!).expect(401);
+  });
+
+  it('a forceReverify proof can be spent only once, even by concurrent requests', async () => {
+    const authority = await MockAuthority.create();
+    const agent = request.agent(buildApp([authority.trustAnchor]));
+    await verifyOn(agent, authority);
+
+    const results = await Promise.all([1, 2, 3].map(() => agent.post('/one-shot')));
+    expect(results.map((r) => r.status).sort()).toEqual([200, 401, 401]);
+    await agent.post('/one-shot').expect(401); // spent
+  });
+
+  it('a failed gated action does not spend the forceReverify proof', async () => {
+    const authority = await MockAuthority.create();
+    const agent = request.agent(buildApp([authority.trustAnchor]));
+    await verifyOn(agent, authority);
+
+    await agent.post('/one-shot?fail=1').expect(500);
+    await agent.post('/one-shot').expect(200);
+    await agent.post('/one-shot').expect(401);
   });
 
   it('401s with a machine-readable hint when unverified', async () => {
