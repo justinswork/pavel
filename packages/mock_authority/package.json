@@ -15,7 +15,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "gen:fixtures": "tsx scripts/generate-fixtures.mts",
-    "bench": "tsx bench/verify.bench.mts"
+    "bench": "tsx bench/verify.bench.mts",
+    "bench:payloads": "tsx bench/payload-sizes.mts"
   },
   "dependencies": {
     "@justinswork/pavel-core": "workspace:*",
