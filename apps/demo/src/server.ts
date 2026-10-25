@@ -6,8 +6,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import session from 'express-session';
-import { pavel } from '@justinswork/pavel';
-import { CATALOG, CATALOG_BY_ID } from './catalog.js';
+import { pavel, requireAgeProof } from '@justinswork/pavel';
+import { CATALOG, CATALOG_BY_ID, MIN_AGE } from './catalog.js';
 
 // The store keeps a cart in the session (PAVEL adds its own fields alongside).
 declare module 'express-session' {
@@ -18,6 +18,8 @@ declare module 'express-session' {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+// The PAVEL browser SDK's ready-made script build, served to the page as /pavel-client.js.
+const CLIENT_BUNDLE = path.join(__dirname, '..', 'node_modules', '@justinswork', 'pavel-client', 'dist', 'zk-age.js');
 
 const PORT = Number(process.env.PORT ?? 3000);
 // The address users reach the store at. PAVEL binds every age check to it, so behind a
@@ -60,7 +62,8 @@ function cartView(cart: Record<string, number>) {
     })
     .filter((x): x is NonNullable<typeof x> => x !== null);
   const total = Number(items.reduce((sum, i) => sum + i.lineTotal, 0).toFixed(2));
-  return { items, total };
+  const hasRestricted = items.some((i) => i.ageRestricted);
+  return { items, total, hasRestricted };
 }
 
 app.get('/api/cart', (req, res) => {
@@ -87,17 +90,31 @@ app.post('/api/cart/clear', (req, res) => {
   res.json(cartView({}));
 });
 
-app.post('/api/checkout', (req, res) => {
-  const view = cartView(req.session.cart ?? {});
-  if (view.items.length === 0) {
-    res.status(400).json({ error: 'empty_cart' });
-    return;
-  }
-  req.session.cart = {};
-  res.json({ ok: true, orderTotal: view.total, itemCount: view.items.length });
-});
+// A cart with a 21+ item must pass PAVEL's age check before the order goes through. Until
+// the user has proven their age, requireAgeProof answers 401 and the order is not placed.
+const ageCheck = requireAgeProof({ minAge: MIN_AGE });
+
+app.post(
+  '/api/checkout',
+  (req, res, next) => {
+    const { hasRestricted } = cartView(req.session.cart ?? {});
+    return hasRestricted ? ageCheck(req, res, next) : next();
+  },
+  (req, res) => {
+    const view = cartView(req.session.cart ?? {});
+    if (view.items.length === 0) {
+      res.status(400).json({ error: 'empty_cart' });
+      return;
+    }
+    req.session.cart = {};
+    res.json({ ok: true, orderTotal: view.total, itemCount: view.items.length });
+  },
+);
 
 // ── Static frontend ──────────────────────────────────────────────────────────
+app.get('/pavel-client.js', (_req, res) => {
+  res.type('application/javascript').sendFile(CLIENT_BUNDLE);
+});
 app.use(express.static(PUBLIC_DIR));
 
 app.listen(PORT, () => {
