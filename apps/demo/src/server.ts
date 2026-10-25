@@ -2,11 +2,12 @@
  * Cellar & Co. — an example store: a product catalog, a session cart, and checkout.
  */
 import { fileURLToPath } from 'node:url';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import session from 'express-session';
-import { pavel, requireAgeProof } from '@justinswork/pavel';
+import { pavel, requireAgeProof, type AppleVerifierConfig } from '@justinswork/pavel';
+import { createGoogleReader, readerFromPem, type GoogleVerifierConfig } from '@justinswork/pavel-core';
 import { MockAuthority, MockWallet } from '@justinswork/pavel-mock-authority';
 import { CATALOG, CATALOG_BY_ID, MIN_AGE } from './catalog.js';
 
@@ -42,6 +43,44 @@ const testIssuer = DEV_WALLET ? await MockAuthority.create() : undefined;
 const untrustedTestIssuer = DEV_WALLET ? await MockAuthority.create() : undefined;
 if (testIssuer) trustAnchors.push(testIssuer.trustAnchor);
 
+// ── Real IDs (optional) ──────────────────────────────────────────────────────
+// Google Wallet and Apple Wallet only release real state IDs to sites registered with them.
+// Once registered, give PAVEL the certificates they issue; until then both stay off.
+
+// Google Wallet: on when GW_RP_METADATA_BYTES is set (Google's sandbox sample value, or the
+// value Google issues after registration). The reader certificate is kept in .google-reader/;
+// for the sandbox, a self-signed one is created there on first run.
+const GOOGLE_DIR = path.join(__dirname, '..', '.google-reader');
+async function loadGoogleConfig(): Promise<GoogleVerifierConfig | undefined> {
+  const gwRpMetadataBytes = process.env.GW_RP_METADATA_BYTES;
+  if (!gwRpMetadataBytes) return undefined;
+  const keyPath = path.join(GOOGLE_DIR, 'reader-key.pem');
+  const certPath = path.join(GOOGLE_DIR, 'reader-cert.pem');
+  if (!existsSync(keyPath) || !existsSync(certPath)) {
+    const created = await createGoogleReader({ commonName: 'Cellar & Co. (sandbox)' });
+    mkdirSync(GOOGLE_DIR, { recursive: true });
+    writeFileSync(keyPath, created.privateKeyPkcs8Pem);
+    writeFileSync(certPath, created.certPem);
+  }
+  const reader = readerFromPem(readFileSync(keyPath, 'utf8'), [readFileSync(certPath, 'utf8')]);
+  return { origin: ORIGIN, reader, gwRpMetadataBytes };
+}
+
+// Apple Wallet: on when .apple-reader/ holds the key and certificate Apple issues through
+// Apple Business (reader-key.pem, and reader-cert.pem with the leaf first). PAVEL then signs
+// its Safari requests, which Apple requires for real IDs.
+const APPLE_DIR = path.join(__dirname, '..', '.apple-reader');
+function loadAppleConfig(): AppleVerifierConfig | undefined {
+  const keyPath = path.join(APPLE_DIR, 'reader-key.pem');
+  const certPath = path.join(APPLE_DIR, 'reader-cert.pem');
+  if (!existsSync(keyPath) || !existsSync(certPath)) return undefined;
+  const chain = readFileSync(certPath, 'utf8').match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) ?? [];
+  return { reader: readerFromPem(readFileSync(keyPath, 'utf8'), chain) };
+}
+
+const google = await loadGoogleConfig();
+const apple = loadAppleConfig();
+
 const app = express();
 app.use(express.json());
 app.use(
@@ -55,7 +94,7 @@ app.use(
 );
 
 // PAVEL's age-check endpoints: GET /pavel/request and POST /pavel/verify.
-app.use(pavel({ origin: ORIGIN, trustAnchors, clientName: 'Cellar & Co.' }));
+app.use(pavel({ origin: ORIGIN, trustAnchors, clientName: 'Cellar & Co.', google, apple }));
 
 // ── Dev wallet (development only) ────────────────────────────────────────────
 if (testIssuer && untrustedTestIssuer) {
@@ -183,4 +222,6 @@ app.listen(PORT, () => {
   console.log(`Cellar & Co. running at ${ORIGIN}`);
   console.log(`  trusting ${trustAnchors.length} ID issuer(s)${DEV_WALLET ? ', including the dev wallet’s test issuer' : ''}`);
   if (DEV_WALLET) console.log('  dev wallet: ON (set NODE_ENV=production to turn it off)');
+  console.log(`  Google Wallet real IDs: ${google ? 'ON' : 'off (set GW_RP_METADATA_BYTES)'}`);
+  console.log(`  Apple Wallet real IDs: ${apple ? 'ON' : 'off (add .apple-reader/reader-key.pem and reader-cert.pem)'}`);
 });
