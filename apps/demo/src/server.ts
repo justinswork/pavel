@@ -2,12 +2,14 @@
  * Cellar & Co. — an example store: a product catalog, a session cart, and checkout.
  */
 import { fileURLToPath } from 'node:url';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
 import session from 'express-session';
+import { pavel } from '@justinswork/pavel';
 import { CATALOG, CATALOG_BY_ID } from './catalog.js';
 
-// The store keeps a cart in the session.
+// The store keeps a cart in the session (PAVEL adds its own fields alongside).
 declare module 'express-session' {
   interface SessionData {
     cart?: Record<string, number>;
@@ -18,6 +20,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 
 const PORT = Number(process.env.PORT ?? 3000);
+// The address users reach the store at. PAVEL binds every age check to it, so behind a
+// tunnel or proxy set ORIGIN to the public address (a trailing slash is ignored).
+const ORIGIN = (process.env.ORIGIN ?? `http://localhost:${PORT}`).replace(/\/+$/, '');
+
+// The ID issuers the store accepts: every *.pem in trust-anchors/.
+const TRUST_DIR = path.join(__dirname, '..', 'trust-anchors');
+const trustAnchors = readdirSync(TRUST_DIR)
+  .filter((f) => f.endsWith('.pem'))
+  .map((f) => readFileSync(path.join(TRUST_DIR, f), 'utf8'));
 
 const app = express();
 app.use(express.json());
@@ -30,6 +41,9 @@ app.use(
     cookie: { httpOnly: true, sameSite: 'lax', maxAge: 60 * 60 * 1000 },
   }),
 );
+
+// PAVEL's age-check endpoints: GET /pavel/request and POST /pavel/verify.
+app.use(pavel({ origin: ORIGIN, trustAnchors, clientName: 'Cellar & Co.' }));
 
 // ── Store API ──────────────────────────────────────────────────────────────
 
@@ -87,5 +101,6 @@ app.post('/api/checkout', (req, res) => {
 app.use(express.static(PUBLIC_DIR));
 
 app.listen(PORT, () => {
-  console.log(`Cellar & Co. running at http://localhost:${PORT}`);
+  console.log(`Cellar & Co. running at ${ORIGIN}`);
+  console.log(`  trusting ${trustAnchors.length} ID issuer(s) from trust-anchors/`);
 });
