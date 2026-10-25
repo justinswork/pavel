@@ -7,6 +7,7 @@ import path from 'node:path';
 import express from 'express';
 import session from 'express-session';
 import { pavel, requireAgeProof } from '@justinswork/pavel';
+import { MockAuthority, MockWallet } from '@justinswork/pavel-mock-authority';
 import { CATALOG, CATALOG_BY_ID, MIN_AGE } from './catalog.js';
 
 // The store keeps a cart in the session (PAVEL adds its own fields alongside).
@@ -18,6 +19,7 @@ declare module 'express-session' {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const DEV_DIR = path.join(__dirname, '..', 'dev');
 // The PAVEL browser SDK's ready-made script build, served to the page as /pavel-client.js.
 const CLIENT_BUNDLE = path.join(__dirname, '..', 'node_modules', '@justinswork', 'pavel-client', 'dist', 'zk-age.js');
 
@@ -31,6 +33,14 @@ const TRUST_DIR = path.join(__dirname, '..', 'trust-anchors');
 const trustAnchors = readdirSync(TRUST_DIR)
   .filter((f) => f.endsWith('.pem'))
   .map((f) => readFileSync(path.join(TRUST_DIR, f), 'utf8'));
+
+// DEV ONLY: a stand-in wallet for browsers without one (like desktop browsers). It mints real,
+// signed test IDs from a test issuer the store trusts in development, so it must never run in
+// production, where it would let anyone pass the age check.
+const DEV_WALLET = process.env.NODE_ENV !== 'production';
+const testIssuer = DEV_WALLET ? await MockAuthority.create() : undefined;
+const untrustedTestIssuer = DEV_WALLET ? await MockAuthority.create() : undefined;
+if (testIssuer) trustAnchors.push(testIssuer.trustAnchor);
 
 const app = express();
 app.use(express.json());
@@ -46,6 +56,52 @@ app.use(
 
 // PAVEL's age-check endpoints: GET /pavel/request and POST /pavel/verify.
 app.use(pavel({ origin: ORIGIN, trustAnchors, clientName: 'Cellar & Co.' }));
+
+// ── Dev wallet (development only) ────────────────────────────────────────────
+if (testIssuer && untrustedTestIssuer) {
+  app.use('/dev', express.static(DEV_DIR));
+
+  // Present a test ID against the user's pending age check, choosing one that produces the
+  // outcome picked in the dev wallet.
+  app.post('/dev-wallet/present', async (req, res) => {
+    const pending = req.session.pavelPending;
+    if (!pending) {
+      res.status(409).json({ error: 'no_pending_request' });
+      return;
+    }
+    const minAge = pending.minAge;
+    const predicate = `age_over_${minAge}`;
+    const scenario = String((req.body as { scenario?: unknown } | undefined)?.scenario ?? 'over');
+    try {
+      let issued;
+      let disclose: string[];
+      switch (scenario) {
+        case 'under': // valid ID, age field signed false → predicate_false
+          issued = await testIssuer.issueMdl({ ageOver: [], claims: { [predicate]: false } });
+          disclose = [predicate];
+          break;
+        case 'absent': // the ID never carried this age field → predicate_unavailable
+          issued = await testIssuer.issueMdl({ ageOver: [13] });
+          disclose = ['age_over_13'];
+          break;
+        case 'untrusted': // signed by an issuer the store doesn't trust → untrusted_issuer
+          issued = await untrustedTestIssuer.issueMdl({ ageOver: [minAge] });
+          disclose = [predicate];
+          break;
+        case 'over': // valid and old enough → verified
+        default:
+          issued = await testIssuer.issueMdl({ ageOver: [minAge] });
+          disclose = [predicate];
+          break;
+      }
+      const vpToken = await new MockWallet(issued).present({ nonce: pending.nonce, origin: ORIGIN, disclose });
+      res.json({ vp_token: vpToken });
+    } catch (err) {
+      console.error('dev wallet failed:', err);
+      res.status(500).json({ error: 'present_failed' });
+    }
+  });
+}
 
 // ── Store API ──────────────────────────────────────────────────────────────
 
@@ -119,5 +175,6 @@ app.use(express.static(PUBLIC_DIR));
 
 app.listen(PORT, () => {
   console.log(`Cellar & Co. running at ${ORIGIN}`);
-  console.log(`  trusting ${trustAnchors.length} ID issuer(s) from trust-anchors/`);
+  console.log(`  trusting ${trustAnchors.length} ID issuer(s)${DEV_WALLET ? ', including the dev wallet’s test issuer' : ''}`);
+  if (DEV_WALLET) console.log('  dev wallet: ON (set NODE_ENV=production to turn it off)');
 });

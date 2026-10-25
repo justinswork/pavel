@@ -95,7 +95,7 @@
     if (res.status === 401 && res.body.error === 'age_verification_required') {
       const { minAge } = res.body;
       msg('Age verification required — opening wallet…', 'info');
-      const proof = await window.pavelClient.requestAgeProof({ minAge });
+      const proof = await runAgeCheck(minAge);
       if (!proof.ok) {
         msg(reasonText(proof.reason, minAge), 'error');
         return;
@@ -117,6 +117,22 @@
     } else {
       msg('Checkout failed.', 'error');
     }
+  }
+
+  /**
+   * Open the phone's wallet through PAVEL. If no wallet answered (for example, in a desktop
+   * browser) and the dev wallet is loaded, which it only is in development, use it instead.
+   */
+  async function runAgeCheck(minAge) {
+    let walletAnswered = false;
+    const proof = await window.pavelClient.requestAgeProof({
+      minAge,
+      onDiagnostic: (event) => {
+        if (event.stage === 'walletResponse') walletAnswered = true;
+      },
+    });
+    if (proof.ok || walletAnswered || !window.pavelDevWallet) return proof;
+    return window.pavelDevWallet.run({ minAge });
   }
 
   function reasonText(reason, minAge) {
