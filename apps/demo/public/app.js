@@ -8,6 +8,7 @@
   const checkoutBtn = document.getElementById('checkout-btn');
   const clearBtn = document.getElementById('clear-btn');
   const checkoutMsg = document.getElementById('checkout-msg');
+  const reverifyToggle = document.getElementById('reverify-toggle');
 
   const money = (n) => `$${n.toFixed(2)}`;
 
@@ -87,7 +88,12 @@
 
   async function checkout() {
     msg('', null);
-    const placeOrder = () => api('/api/checkout', { method: 'POST' });
+    const placeOrder = () =>
+      api('/api/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ forceReverify: reverifyToggle.checked }),
+      });
     let res = await placeOrder();
     let ageChecked = false;
 

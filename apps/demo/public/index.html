@@ -23,6 +23,10 @@
         <div id="cart-items" class="cart-items"></div>
         <div class="cart-footer">
           <div class="cart-total"><span>Total</span><strong id="cart-total">$0.00</strong></div>
+          <label class="reverify-toggle" title="For stores whose policy requires a fresh age check for every purchase (forceReverify).">
+            <input type="checkbox" id="reverify-toggle" />
+            Re-verify age at every checkout
+          </label>
           <button id="checkout-btn" class="btn btn-primary" disabled>Checkout</button>
           <button id="clear-btn" class="btn btn-ghost">Clear cart</button>
           <p id="checkout-msg" class="checkout-msg" role="status"></p>

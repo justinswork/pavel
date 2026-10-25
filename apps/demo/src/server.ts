@@ -148,13 +148,19 @@ app.post('/api/cart/clear', (req, res) => {
 
 // A cart with a 21+ item must pass PAVEL's age check before the order goes through. Until
 // the user has proven their age, requireAgeProof answers 401 and the order is not placed.
+// By default a successful check is remembered for the session; with forceReverify, every
+// purchase needs a fresh one.
 const ageCheck = requireAgeProof({ minAge: MIN_AGE });
+const ageCheckEveryPurchase = requireAgeProof({ minAge: MIN_AGE, forceReverify: true });
 
 app.post(
   '/api/checkout',
   (req, res, next) => {
     const { hasRestricted } = cartView(req.session.cart ?? {});
-    return hasRestricted ? ageCheck(req, res, next) : next();
+    if (!hasRestricted) return next();
+    // The demo lets you switch policies from the cart; a real store would pick one.
+    const guard = req.body?.forceReverify ? ageCheckEveryPurchase : ageCheck;
+    return guard(req, res, next);
   },
   (req, res) => {
     const view = cartView(req.session.cart ?? {});
