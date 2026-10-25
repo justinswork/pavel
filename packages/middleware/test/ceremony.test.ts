@@ -289,6 +289,7 @@ describe('pavel middleware ceremony', () => {
       .expect((res) =>
         expect(res.body).toEqual({
           error: 'age_verification_required',
+          minAge: 21,
           requestUrl: '/pavel/request?minAge=21',
         }),
       );

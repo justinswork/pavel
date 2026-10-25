@@ -22,6 +22,7 @@ function pruneClaims(now: number): void {
 function deny(res: Response, minAge: number): void {
   res.status(401).json({
     error: 'age_verification_required',
+    minAge,
     requestUrl: `/pavel/request?minAge=${minAge}`,
   });
 }
