@@ -3,23 +3,18 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Cellar &amp; Co. — PAVEL Demo Store</title>
+    <title>Cellar &amp; Co.</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="mock-banner">
-      🔒 <strong>PAVEL testbed</strong> — the age check runs the <em>real</em> verifier over real mDL credentials; only the holder is a simulated <em>dev wallet</em> (this browser has no OS wallet).
-    </div>
-
     <header class="site-header">
       <div class="brand">🛒 Cellar &amp; Co.</div>
-      <div id="verify-badge" class="badge badge-unverified">Not age-verified</div>
     </header>
 
     <main class="layout">
       <section class="catalog">
         <h1>Shop</h1>
-        <p class="lede">Add items to your cart. Anything marked <span class="pill pill-21">21+</span> triggers the PAVEL age gate at checkout.</p>
+        <p class="lede">Add items to your cart. Items marked <span class="pill pill-21">21+</span> are for customers 21 or older.</p>
         <div id="product-grid" class="product-grid"></div>
       </section>
 
@@ -28,10 +23,6 @@
         <div id="cart-items" class="cart-items"></div>
         <div class="cart-footer">
           <div class="cart-total"><span>Total</span><strong id="cart-total">$0.00</strong></div>
-          <label class="reverify-toggle" title="Simulates a store whose policy requires a fresh proof for every purchase (forceReverify).">
-            <input type="checkbox" id="reverify-toggle" />
-            Re-verify age at every checkout
-          </label>
           <button id="checkout-btn" class="btn btn-primary" disabled>Checkout</button>
           <button id="clear-btn" class="btn btn-ghost">Clear cart</button>
           <p id="checkout-msg" class="checkout-msg" role="status"></p>
@@ -39,8 +30,6 @@
       </aside>
     </main>
 
-    <script src="/zk-age.js"></script>
-    <script src="/dev-wallet.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

@@ -1,5 +1,5 @@
 /**
- * Minimal store catalog. Some items are age-restricted (trigger the gate at checkout).
+ * Minimal store catalog. Some items are age-restricted (21+).
  * Restricted items are listed last so on phones they sit just above the cart.
  */
 

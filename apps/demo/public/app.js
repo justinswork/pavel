@@ -1,4 +1,4 @@
-/** Store front-end: catalog, cart, and the age-gated checkout flow. */
+/** Store front-end: catalog, cart, and checkout. */
 (function () {
   'use strict';
 
@@ -8,10 +8,6 @@
   const checkoutBtn = document.getElementById('checkout-btn');
   const clearBtn = document.getElementById('clear-btn');
   const checkoutMsg = document.getElementById('checkout-msg');
-  const badge = document.getElementById('verify-badge');
-  const reverifyToggle = document.getElementById('reverify-toggle');
-
-  let minAge = 21;
 
   const money = (n) => `$${n.toFixed(2)}`;
 
@@ -72,27 +68,12 @@
     );
     cartTotalEl.textContent = money(view.total);
     checkoutBtn.disabled = view.items.length === 0;
-    checkoutBtn.textContent = view.hasRestricted ? 'Checkout (age check) →' : 'Checkout →';
-  }
-
-  function setBadge(verified, age) {
-    if (verified) {
-      badge.className = 'badge badge-verified';
-      badge.textContent = `✓ Age-verified (${age}+)`;
-    } else {
-      badge.className = 'badge badge-unverified';
-      badge.textContent = 'Not age-verified';
-    }
+    checkoutBtn.textContent = 'Checkout →';
   }
 
   function msg(text, kind) {
     checkoutMsg.textContent = text;
     checkoutMsg.className = `checkout-msg ${kind ? 'msg-' + kind : ''}`;
-  }
-
-  async function refreshStatus() {
-    const { body } = await api('/api/status');
-    setBadge(body.verified, body.verifiedMinAge);
   }
 
   async function addToCart(productId, qty = 1) {
@@ -106,104 +87,16 @@
 
   async function checkout() {
     msg('', null);
-    const checkoutReq = () =>
-      api('/api/checkout', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ forceReverify: reverifyToggle.checked }),
-      });
-    let res = await checkoutReq();
-
-    // Gate says verification is required → run the PAVEL ceremony, then retry.
-    if (res.status === 401 && res.body.error === 'age_verification_required') {
-      msg('Age verification required — opening wallet…', 'info');
-      const proof = await runAgeCeremony(minAge);
-      await refreshStatus();
-      if (!proof.ok) {
-        msg(reasonText(proof.reason), 'error');
-        return;
-      }
-      res = await checkoutReq();
-    }
+    const res = await api('/api/checkout', { method: 'POST' });
 
     if (res.status === 200 && res.body.ok) {
-      msg(
-        `Order placed — ${res.body.itemCount} item(s), ${money(res.body.orderTotal)}. No personal data was received.`,
-        'success',
-      );
+      msg(`Order placed — ${res.body.itemCount} item(s), ${money(res.body.orderTotal)}.`, 'success');
       const cart = await api('/api/cart');
       renderCart(cart.body);
-      // With forceReverify the proof is now consumed — reflect it in the badge.
-      await refreshStatus();
     } else if (res.body.error === 'empty_cart') {
       msg('Your cart is empty.', 'error');
     } else {
       msg('Checkout failed.', 'error');
-    }
-  }
-
-  /**
-   * Try the real Digital Credentials API via the pavel-client SDK; on a host with
-   * no OS wallet — like a desktop browser — fall back to the simulated dev wallet.
-   * Genuine verification verdicts (predicate_false, untrusted_issuer, …) are
-   * surfaced as-is; only "couldn't run here" signals trigger the fallback.
-   *
-   * The request is fetched up front so navigator.credentials.get() is the first
-   * async call in the click, keeping the transient activation the DC API needs.
-   * No timeout wraps the wallet call — a real user needs time to choose + consent.
-   */
-  async function runAgeCeremony(minAge) {
-    let request;
-    try {
-      request = await window.pavelClient.fetchAgeRequest({ minAge });
-    } catch {
-      return window.pavelDevWallet.run({ minAge }); // couldn't mint a challenge
-    }
-
-    // Track whether the OS wallet actually presented a credential — that, not the
-    // specific failure reason, decides fall-back vs. surface.
-    let presented = false;
-    const onDiagnostic = (event) => {
-      if (event.stage === 'walletResponse') presented = true;
-      shipDiagnostic(event);
-    };
-
-    let proof;
-    try {
-      proof = await window.pavelClient.requestAgeProof({ minAge, request, onDiagnostic });
-    } catch {
-      proof = { ok: false, reason: 'verification_failed' };
-    }
-    if (proof.ok) return proof;
-    // A credential WAS presented → surface the verifier's verdict. Nothing presented
-    // (no OS wallet / dismissed / retrieval error) → dev-wallet fallback.
-    return presented ? proof : window.pavelDevWallet.run({ minAge });
-  }
-
-  /** Ship DC-API diagnostics to the server terminal — a dev aid for on-device debugging. */
-  function shipDiagnostic(event) {
-    fetch('/debug/log', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(event),
-      keepalive: true,
-    }).catch(() => {});
-  }
-
-  function reasonText(reason) {
-    switch (reason) {
-      case 'declined':
-        return 'You declined to share age. Checkout cancelled.';
-      case 'predicate_false':
-        return `Verification says you are not over ${minAge}. Age-restricted items cannot be purchased.`;
-      case 'predicate_unavailable':
-        return 'That credential does not carry the requested age attribute.';
-      case 'untrusted_issuer':
-        return 'That credential is from an issuer this store does not trust.';
-      case 'unsupported':
-        return 'This browser has no digital wallet support.';
-      default:
-        return `Verification failed (${reason}).`;
     }
   }
 
@@ -217,9 +110,7 @@
   // Boot.
   (async () => {
     const [cat, cart] = await Promise.all([api('/api/catalog'), api('/api/cart')]);
-    minAge = cat.body.minAge ?? 21;
     renderCatalog(cat.body.products);
     renderCart(cart.body);
-    await refreshStatus();
   })();
 })();

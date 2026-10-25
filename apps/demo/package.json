@@ -2,19 +2,14 @@
   "name": "pavel-demo",
   "version": "0.1.0",
   "private": true,
-  "description": "Reference age-gated e-commerce demo — the end-to-end testbed for PAVEL. Runs the real middleware + core verifier over real mDL credentials, with a simulated dev wallet standing in for the OS wallet.",
+  "description": "Cellar & Co., an example store with age-restricted products.",
   "type": "module",
   "scripts": {
-    "dev": "pnpm --filter @justinswork/pavel-client build && tsx watch src/server.ts",
-    "start": "pnpm --filter @justinswork/pavel-client build && tsx src/server.ts",
-    "build:client": "pnpm --filter @justinswork/pavel-client build",
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@justinswork/pavel": "workspace:*",
-    "@justinswork/pavel-client": "workspace:*",
-    "@justinswork/pavel-core": "workspace:*",
-    "@justinswork/pavel-mock-authority": "workspace:*",
     "express": "^4.19.2",
     "express-session": "^1.18.0"
   },
