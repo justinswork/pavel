@@ -1,109 +1,66 @@
-# PAVEL Demo Store (`pavel-demo`)
+# Cellar & Co. (`pavel-demo`)
 
-A minimal age-gated e-commerce store that serves as the **end-to-end testbed** for
-PAVEL. Browse → add to cart → checkout; a cart containing an age-restricted item
-forces the PAVEL verification ceremony before the order completes.
+An example store that shows PAVEL working end to end. Some products (wine, beer, a kitchen knife) are marked 21+. Checking out with one of them in the cart triggers a PAVEL age check before the order goes through; other orders are never prompted.
 
-> **This uses a MOCK age-gate.** No real wallet, credential, or cryptography is
-> involved. The mock mirrors the real contract from [`../../docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md)
-> so the real `@justinswork/pavel*` packages can drop in behind the same
-> interface later. See [The swap point](#the-swap-point).
+It runs the real `@justinswork/pavel` middleware and verifier. Nothing about the verification is simulated.
 
 ## Run
 
+From the repository root:
+
 ```bash
-npm install
-npm start        # or: npm run dev  (auto-restart on change)
+corepack pnpm install
+corepack pnpm dev
 ```
 
-Then open the printed URL (defaults to `http://localhost:3000`; set `PORT` to
-change it). `ORIGIN` overrides the origin bound into the request/verify ceremony.
+Then open `http://localhost:3000`. Set `PORT` to use a different port.
 
-## What's real vs. mocked
+## On a desktop browser
 
-| Real (production-shaped) | Mocked (stubbed for the testbed) |
+Desktop browsers have no ID wallet, so when no wallet answers, the store opens a clearly labeled stand-in **dev wallet**. It presents real, signed test IDs from PAVEL's mock authority, so the production verifier still runs, and it has a button for each outcome:
+
+- **Present credential, over 21:** `verified`, and the order completes
+- **Present credential, under 21:** `predicate_false`
+- **Credential without this predicate:** `predicate_unavailable`
+- **Credential from untrusted issuer:** `untrusted_issuer`
+- **Cancel / decline sharing:** the check is cancelled
+
+The dev wallet exists only in this demo. A real deployment has no such endpoint.
+
+## On a real phone
+
+The Digital Credentials API only works on secure (HTTPS) sites, so make the store reachable over HTTPS, for example with a temporary tunnel, and set `ORIGIN` to that address so it matches what the phone's browser sees:
+
+```bash
+ORIGIN=https://your-tunnel.example corepack pnpm dev
+```
+
+- **Android:** install Google's [CMWallet](https://github.com/digitalcredentialsdev/CMWallet) test wallet, which includes a sample driver's license. A 21+ checkout in Chrome should end in `verified`.
+- **iPhone:** install Apple's free "Wallet Identity Developer" profile from Apple's developer profiles page, which adds a simulated license to Apple Wallet. Apple Wallet accepts the request, but the simulated license has no issuer certificate, so the result is `untrusted_issuer`. That's expected.
+
+## Configuration
+
+| Setting | Effect |
 |---|---|
-| Server-minted single-use nonce, TTL, session binding | The wallet UI (a labelled in-page modal) |
-| Origin / audience binding, replay rejection | The `vp_token` (plaintext JSON, not CBOR/COSE) |
-| Session flag, session-fixation regeneration | Issuer trust (a string compare, not an IACA cert chain) |
-| The `pavel()` + `requireAgeProof()` API surface (§8) | The credential signatures (no COSE_Sign1) |
-| The verification **outcome** vocabulary (§7) | |
+| `PORT` | Port to listen on (default `3000`). |
+| `ORIGIN` | The public address the store is reached at (default `http://localhost:<PORT>`). |
+| `trust-anchors/*.pem` | Extra issuers to trust, on top of the mock authority. Ships with the CMWallet and Multipaz test issuers; see [trust-anchors/README.md](trust-anchors/README.md). |
+| `GW_RP_METADATA_BYTES` | Turns on the Google Wallet signed request (for Google's sandbox or a registered site). |
+| `.apple-reader/reader-key.pem` + `reader-cert.pem` | Turns on signed requests for Apple Wallet, using a certificate Apple issued you. Never commit these; the folder is in `.gitignore`. |
 
-## The swap point
+## Re-verifying at every checkout
 
-Only one file fakes cryptography: [`src/pavel-mock/verify.ts`](src/pavel-mock/verify.ts).
-It performs the *same logical checks* as ARCHITECTURE.md §7's pipeline and returns
-the same outcome enum (`verified | predicate_false | predicate_unavailable |
-untrusted_issuer | expired | replay | malformed`). Replacing it with the real
-`@justinswork/pavel-core` verifier is the entire go-live step for this demo — the
-middleware ([`src/pavel-mock/index.ts`](src/pavel-mock/index.ts)) and the store
-never change.
+By default, a successful check is remembered for the rest of the session. The cart's **"Re-verify age at every checkout"** checkbox switches the checkout guard to `requireAgeProof({ minAge: 21, forceReverify: true })`, so every purchase needs a fresh check. A real store would choose one policy; the checkbox lets you compare both. The header badge flips back to "Not age-verified" after each checkout when it's on.
 
-## Exercising the outcomes
+## Routes
 
-The mock wallet modal offers a scenario button for each outcome, so you can drive
-the store through every branch by hand:
-
-- **Present credential — over 21** → `verified`, order completes
-- **Present credential — under 21** → `predicate_false`, stays gated
-- **Credential without this predicate** → `predicate_unavailable`
-- **Credential from untrusted issuer** → `untrusted_issuer`
-- **Cancel / decline** → `declined`
-
-Replay, malformed, and expired outcomes are covered by the middleware (single-use
-nonce, TTL) and are reachable via the HTTP API directly.
-
-## Re-verifying at every checkout (`forceReverify`)
-
-By default PAVEL is **verify-once-per-session**: the ceremony runs once and the
-cached flag gates later requests (ARCHITECTURE.md §4/§8). Some stores must instead
-re-verify on **every** purchase regardless of a recent prior verification. Pass
-`forceReverify: true` to the gate:
-
-```js
-// Verify once, cache for the session (default):
-requireAgeProof({ minAge: 21 })
-
-// Require a fresh proof for every gated action:
-requireAgeProof({ minAge: 21, forceReverify: true })
-```
-
-`forceReverify` makes the proof **one-shot**: it authorizes exactly one gated
-action and is consumed once that action completes successfully (`res.on('finish')`,
-status < 400), so the next request re-runs the ceremony. A failed action does not
-burn the verification.
-
-The store exposes this as the **"Re-verify age at every checkout"** toggle in the
-cart. (A real store hard-codes the policy; the toggle just lets you compare both
-modes in one session — watch the header badge flip back to "Not age-verified" after
-a checkout when it's on.)
-
-## Layout
-
-```
-demo/
-├─ src/
-│  ├─ server.ts            # Express store: catalog, cart, gated checkout
-│  ├─ catalog.ts           # product data (some age-restricted)
-│  └─ pavel-mock/
-│     ├─ index.ts          # pavel() ceremony endpoints + requireAgeProof() gate  [REAL plumbing]
-│     ├─ verify.ts         # verifyPresentation() — THE SWAP POINT               [mock crypto]
-│     └─ types.ts          # shared types mirroring ARCHITECTURE.md
-└─ public/
-   ├─ index.html
-   ├─ zk-age.js            # mock client SDK: requestAgeProof() + simulated wallet
-   ├─ app.js               # store front-end
-   └─ styles.css
-```
-
-## HTTP surface
-
-| Method + path | Purpose |
+| Route | Purpose |
 |---|---|
-| `GET /pavel/request?minAge=NN` | Mint nonce, return the OpenID4VP request (§5) |
-| `POST /pavel/verify` `{ vp_token }` | Run the pipeline, set the session flag (§7) |
-| `GET /api/catalog` | Products + configured `minAge` |
-| `GET/POST /api/cart`, `POST /api/cart/clear` | Session cart |
-| `POST /api/checkout` | Completes; gated by `requireAgeProof` iff cart has a restricted item |
-| `GET /api/status` | Current verification badge state |
-| `GET /premium-content` | Standalone gated route mirroring the README example |
+| `GET /pavel/request`, `POST /pavel/verify` | The PAVEL endpoints, from `@justinswork/pavel` |
+| `POST /api/checkout` | Places the order; guarded by `requireAgeProof` when the cart has a 21+ item |
+| `GET /api/catalog` | Products and the store's minimum age |
+| `GET`/`POST /api/cart`, `POST /api/cart/clear` | The session cart |
+| `GET /api/status` | Whether this session is age-verified (for the header badge) |
+| `GET /premium-content` | A standalone guarded page, like the main README's example |
+| `POST /dev-wallet/present` | Demo only: the dev wallet's endpoint |
+| `POST /debug/log` | Demo only: prints browser-side diagnostics in the server's terminal, for debugging real devices |

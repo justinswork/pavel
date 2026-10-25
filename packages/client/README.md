@@ -1,112 +1,120 @@
-# @justinswork/pavel-client (`zk-age.js`)
+# `@justinswork/pavel-client`
 
-The browser half of PAVEL. One call runs the whole age-verification ceremony
-against the [`@justinswork/pavel`](../middleware) endpoints — fetch the challenge,
-invoke the OS wallet through the [Digital Credentials API][dc-api], post the
-presentation back — and hands you a boolean-shaped result. No PII ever touches
-your page.
+The browser half of PAVEL. One call runs the whole age check against the [`@justinswork/pavel`](../middleware) endpoints: it fetches a challenge from your server, opens the phone's wallet through the [Digital Credentials API][dc-api], sends the wallet's answer back to your server for verification, and gives you a simple result. No personal data ever reaches your page.
+
+```bash
+npm install @justinswork/pavel-client
+```
+
+> PAVEL is not yet published to npm. Until it is, use the packages from this repository (see the [main README](../../README.md#run-it-locally)).
+
+## Usage
+
+The usual pattern: try the protected action, and if the server answers that an age check is needed, run it and try again.
 
 ```js
 import { requestAgeProof } from '@justinswork/pavel-client';
 
-const result = await requestAgeProof({ minAge: 21 });
-if (result.ok) {
-  location.reload(); // the server has recorded the eligibility fact
-} else {
-  showFallback(result.reason); // 'unsupported' | 'declined' | 'predicate_false' | …
+let response = await fetch('/checkout', { method: 'POST' });
+if (response.status === 401) {
+  const { minAge } = await response.json();       // the server says which age it needs
+  const proof = await requestAgeProof({ minAge });  // opens the phone's wallet
+  if (proof.ok) response = await fetch('/checkout', { method: 'POST' });
+  else showMessage(proof.reason);
 }
 ```
 
-Or as a plain script — the IIFE build attaches `window.pavelClient`:
+The page doesn't decide whether an age check is needed; the server does, based on its own rules and whether the user has already verified.
+
+Without a bundler, the IIFE build attaches `window.pavelClient`:
 
 ```html
-<script src="/zk-age.js"></script>
+<script src="/pavel-client.js"></script>
 <script>
   const { ok, reason } = await window.pavelClient.requestAgeProof({ minAge: 21 });
 </script>
 ```
 
+(The build currently writes this file as `dist/zk-age.js`; serve it under whatever name you like.)
+
+## Browsers and wallets
+
+When the server offers several protocols, as `@justinswork/pavel` does, the client passes all of them to the browser, which picks the one it and the user's wallet support:
+
+| Browser | Protocol |
+|---|---|
+| Chrome on Android | `openid4vp-v1-unsigned`, or `openid4vp-v1-signed` for Google Wallet real IDs |
+| Safari on iPhone / iPad | `org-iso-mdoc` |
+
+Encrypted answers (`org-iso-mdoc` and `openid4vp-v1-signed`) are forwarded to the server as-is; only the server can decrypt them.
+
 ## Result
 
-`requestAgeProof` never throws. It resolves to:
+`requestAgeProof` never throws. It resolves to `{ ok: true }` once the server has verified the answer and recorded it, or to `{ ok: false, reason }`:
 
-- `{ ok: true }` — the ceremony verified and the server recorded the fact.
-- `{ ok: false, reason }` — where `reason` is one of:
-
-| reason | meaning |
+| `reason` | Meaning |
 |---|---|
-| `unsupported` | this browser has no Digital Credentials API |
-| `declined` | the user dismissed the wallet prompt |
-| `request_failed` | couldn't fetch the authorization request |
-| `verification_failed` | the verify call errored or returned an unknown outcome |
-| `predicate_false` | credential present, but under the required age |
-| `predicate_unavailable` | the issuer never signed this age predicate |
-| `untrusted_issuer` | signer doesn't chain to a trusted IACA |
-| `expired` | credential outside its validity window |
-| `replay` | presentation not bound to this fresh challenge |
-| `malformed` | undecodable / structurally invalid presentation |
+| `unsupported` | This browser doesn't support the Digital Credentials API. |
+| `declined` | The user closed the wallet prompt. |
+| `request_failed` | The challenge couldn't be fetched from the server. |
+| `verification_failed` | The verify call failed or returned an unknown result. |
+| `predicate_false` | The ID is valid, but the user is under the required age. |
+| `predicate_unavailable` | The ID doesn't include the requested age field. |
+| `untrusted_issuer` | The ID wasn't issued by anyone the server trusts. |
+| `expired` | The ID is outside its validity dates. |
+| `replay` | The answer wasn't made for this site and this challenge. |
+| `malformed` | The answer couldn't be read, or its signature is invalid. |
 
-The last six pass straight through from `pavel-core`'s verification outcomes.
+The last six come straight from the server's verification result.
 
 ## Options
 
-`minAge` is the only one most callers set. The rest exist for custom mounts and
-testing:
+`minAge` is the only option most callers set:
 
-| option | default | notes |
+| Option | Default | Description |
 |---|---|---|
-| `minAge` | — | required; maps to the `age_over_<minAge>` predicate |
-| `requestPath` | `/pavel/request` | where the challenge is minted |
-| `verifyPath` | `/pavel/verify` | where the presentation is verified |
-| `protocol` | `openid4vp-v1-unsigned` | DC API protocol string (must be a browser-listed one; bare `openid4vp` is rejected) |
-| `credentialId` | `age_check` | DCQL id the vp_token is read under |
-| `fetch` | global `fetch` | injectable for tests / non-browser hosts |
-| `signal` | — | `AbortSignal` to cancel the in-flight ceremony |
-| `request` | — | a pre-fetched authorization request (from `fetchAgeRequest`) — see *Transient activation* below |
+| `minAge` | required | The age to prove, e.g. `21` asks for `age_over_21`. |
+| `request` | none | A challenge fetched earlier with `fetchAgeRequest`. See [Timing](#timing). |
+| `requestPath` | `/pavel/request` | Where your server issues challenges. |
+| `verifyPath` | `/pavel/verify` | Where your server verifies answers. |
+| `signal` | none | An `AbortSignal` to cancel the check. |
+| `onDiagnostic` | none | A callback that receives the raw wallet response, wallet errors, and the verify result. Useful for debugging on real devices. |
+| `fetch` | global `fetch` | A replacement `fetch`, for tests or non-browser hosts. |
+| `protocol` | `openid4vp-v1-unsigned` | Only used if the server returns a single request instead of a list. |
+| `credentialId` | `age_check` | The request ID the answer is read under (OpenID4VP only). |
 
-## Transient activation
+## Timing
 
-`navigator.credentials.get()` requires **transient activation** — it must run
-inside a live user gesture. Chrome keeps that activation alive for ~5s across
-`await`s, so the one-call form above usually works. But to be robust (slow
-networks, tunnels), fetch the request *before* the gesture and pass it in, so the
-wallet call is the first async step in the handler:
+Browsers only open the wallet in direct response to a user action, such as a click. Chrome allows a few seconds of other work between the click and the wallet call, so the simple usage above normally works. On slow connections, fetch the challenge before the click and pass it in, so opening the wallet is the first thing the click does:
 
 ```js
 import { fetchAgeRequest, requestAgeProof } from '@justinswork/pavel-client';
 
-// Ahead of the gesture (e.g. when the user shows checkout intent):
+// Ahead of time, e.g. when the checkout page loads:
 const request = await fetchAgeRequest({ minAge: 21 });
 
-// Inside the click handler — get() runs first, activation intact:
+// In the click handler, the wallet opens immediately:
 button.addEventListener('click', async () => {
   const result = await requestAgeProof({ minAge: 21, request });
 });
 ```
 
-The minted nonce is single-use and TTL'd (default 5 min), so fetch it close to
-the gesture. `fetchAgeRequest` throws on a network / non-2xx error; `requestAgeProof`
-still never throws.
+A challenge is single-use and expires (after 5 minutes by default), so fetch it close to when it will be used. `fetchAgeRequest` throws on a network or server error; `requestAgeProof` never throws.
 
 ## Feature detection
 
-`isDigitalCredentialsSupported()` is exported if you want to gate UI before
-starting; `requestAgeProof` also checks internally and returns `unsupported`
-rather than throwing.
+`isDigitalCredentialsSupported()` tells you whether the browser supports the API, if you want to adjust your UI before starting. `requestAgeProof` also checks, and returns `unsupported` instead of throwing.
 
 ## Build
 
 ```bash
-pnpm --filter @justinswork/pavel-client build
+corepack pnpm --filter @justinswork/pavel-client build
 ```
 
-Emits `dist/zk-age.js` (IIFE, `window.pavelClient`) and `dist/pavel-client.mjs`
-(ESM).
+Writes `dist/zk-age.js` (IIFE, attaches `window.pavelClient`) and `dist/pavel-client.mjs` (ES module).
 
-## Limitation
+## License
 
-v0 targets the `openid4vp-v1-unsigned` protocol. Safari currently speaks only
-`org-iso-mdoc`, whose request payload differs; broadening the compatibility
-matrix (and the server-side request builder) is tracked separately.
+[Apache-2.0](../../LICENSE)
 
 [dc-api]: https://developer.mozilla.org/en-US/docs/Web/API/Digital_Credentials_API

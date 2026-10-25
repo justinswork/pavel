@@ -1,7 +1,7 @@
 # Golden-vector fixtures
 
 Pre-generated `DeviceResponse` presentations that exercise every verification
-outcome (ARCHITECTURE.md §7, §13 tier 1). These drive `verify.integration.test.ts`
+outcome. These drive `verify.integration.test.ts`
 against the **real** CBOR/COSE backend — no fakes — and are where most correctness
 confidence comes from.
 

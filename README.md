@@ -1,56 +1,113 @@
 # PAVEL
 
-**P**rivacy-first **A**ge **V**erification & **E**ligibility **L**ibrary — a two-lines-of-code gateway that lets web developers verify a user meets an eligibility predicate (e.g. *over 21*) **without ever receiving their personal data**.
+**P**rivacy-first **A**ge **V**erification & **E**ligibility **L**ibrary: an open-source TypeScript library that lets a website confirm one fact about a user, such as *over 21*, from the mobile driver's license in their phone wallet, **without ever receiving their personal data**.
 
-> **Status:** early development. PAVEL began as a graduate capstone project; see the [Roadmap](#roadmap--scope) for what's built and what's planned.
+> **Status:** works end to end with Google's and Apple's test wallets on real Android and iPhone devices. Not yet published to npm. Accepting real state IDs requires each site to register with Google and Apple; see [Accepting real IDs](#accepting-real-ids). PAVEL began as a graduate capstone project.
 
 ```js
-// Backend: gate a route behind a cryptographically verified age check
-app.post('/premium-content', requireAgeProof({ minAge: 21 }), (req, res) => {
-  res.send('Access granted — age verified, no personal data received.');
-});
+// Server: only users who have proven they are 21 or older reach placeOrder
+app.use(pavel({ origin: 'https://shop.example', trustAnchors }));
+app.post('/checkout', requireAgeProof({ minAge: 21 }), placeOrder);
+```
+
+```js
+// Browser: when the server asks for proof, open the phone's wallet
+const proof = await requestAgeProof({ minAge: 21 });
 ```
 
 ---
 
 ## Why
 
-New global regulations require websites to strictly enforce age gates. Traditional solutions — uploading a photo of an ID card — compromise user privacy by exposing highly sensitive PII to arbitrary web servers.
+Online age checks usually mean uploading a photo of an ID or typing a name, birthdate, and address for a third party to match. Both expose far more personal data than the question needs.
 
-Emerging browser standards (the [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/), shipped in stable Chrome and Safari) now let a user present a **selectively-disclosed** attribute from their mobile wallet — proving `age_over_21 = true` while their name, birthdate, address, and photo never leave the phone. Newer cryptographic libraries (Google's [Longfellow-ZK](https://github.com/google/longfellow-zk)) push this further toward full zero-knowledge *unlinkability*, but remain early-stage.
+Mobile driver's licenses in Google Wallet and Apple Wallet support *selective disclosure*: the wallet shares only the fields a site asks for. Because the issuing state also signs ready-made yes/no fields such as `age_over_21`, a site can learn that a user is over 21 without ever seeing their birthdate. Browsers expose this through the [W3C Digital Credentials API](https://www.w3.org/TR/digital-credentials/), available in stable Chrome and Safari.
 
-In both cases the raw browser-wallet integration is complex, leaving a gap for everyday web developers. **PAVEL is a plug-and-play, web-first gateway** that abstracts this cryptography into an ergonomic, declarative middleware framework — grounded in the selective-disclosure mechanism that ships today, with full zero-knowledge proofs pursued as a stretch goal.
+Using that API directly is hard: several protocols, two encryption schemes, and cryptographic checks that tie each response to the site that asked for it. PAVEL handles all of that behind a few lines of code.
 
-## How It Works
+## How it works
 
-PAVEL is a cohesive, two-part full-stack utility:
+1. **The server issues a challenge.** It's random, single-use, expires after 5 minutes, and is tied to your site's address. It offers every format PAVEL supports, and the browser picks the one it understands.
+2. **The phone's wallet asks the user.** The wallet shows which site is asking and the single fact requested ("Age over 21"). If the user agrees, the wallet returns a signed answer.
+3. **The server verifies the answer.** PAVEL checks that the ID was issued by a trusted authority, that it hasn't been altered, that it's within its validity dates, that the phone's signature ties the answer to this site and this challenge, and finally that the age field is true. The site gets a yes or no, and the session remembers the result.
 
-- **Client SDK (`zk-age.js`)** — a lightweight front-end library. It triggers the browser's native `navigator.credentials.get()` to request a selectively-disclosed age attribute from the user's wallet (Apple / Google) and forwards the resulting token to your backend.
-- **Server Middleware (Node.js / Express)** — a drop-in router module. It intercepts the client token, cryptographically verifies the issuer signature (COSE Sign1 / MSO) against a trusted authority's public key (e.g. a state DMV), and manages the user's logged-in session state.
-
-## Roadmap & Scope
-
-PAVEL targets **ISO 18013-7 mdoc selective disclosure** — the presentation mechanism live in stable Chrome and Safari today — as its production baseline. Full zero-knowledge unlinkability (Longfellow-ZK) is a clearly-scoped stretch objective.
-
-| # | Deliverable | Description |
+| Browser | Protocol | Status |
 |---|---|---|
-| 1 | **Mock Authority Simulator** | Mints mock, cryptographically signed mDLs — a local root-of-trust so the whole system is testable offline against pre-trusted keys. *(No relying-party registration required.)* |
-| 2 | **Client SDK (`zk-age.js`)** | Front-end library wrapping `navigator.credentials.get()` with a declarative request for an age predicate (e.g. `age_over_21`). |
-| 3 | **Server Middleware** | The `requireAgeProof({ minAge })` router: parses the returned mdoc, verifies the issuer signature against the trusted authority key, manages session state. |
-| 4 | **Reference Web App** | A fully functional, age-gated e-commerce demo showing the gateway working end-to-end against an emulated wallet. |
-| 5 | **Performance & Latency Evaluation** | Benchmarks of token payload sizes and sustained concurrent verifications-per-second before latency degrades. |
+| Chrome on Android | OpenID4VP (unsigned) | verified with Google's CMWallet test wallet |
+| Safari on iPhone / iPad | ISO 18013-7 Annex C (HPKE-encrypted) | verified with the Multipaz test wallet; Apple Wallet accepts PAVEL's requests (see [Testing](#testing)) |
+| Chrome with Google Wallet | OpenID4VP (signed and encrypted) | built and tested against simulated wallets; needs a registered site to confirm |
 
-**Stretch — Zero-Knowledge Unlinkability:** integrate verification of a Longfellow-ZK range proof (via a WASM-compiled or native binding of the Apache-2.0 library), eliminating issuer-signature linkability. The five core deliverables stand independently if this proves infeasible.
+## Packages
+
+| Package | What it is |
+|---|---|
+| [`@justinswork/pavel`](packages/middleware) | Express middleware: the age-check endpoints and the `requireAgeProof` route guard. **Start here.** |
+| [`@justinswork/pavel-client`](packages/client) | Browser SDK: `requestAgeProof()` opens the wallet and sends the answer to your server. |
+| [`@justinswork/pavel-core`](packages/core) | The framework-independent verifier used by the middleware. Use it directly to integrate with something other than Express. |
+| [`@justinswork/pavel-mock-authority`](packages/mock_authority) | Test-only: creates a test issuer and signed test IDs, so everything can be tested offline. |
+| [`apps/demo`](apps/demo) | Cellar & Co., an example store with age-restricted products, wired up end to end. |
+
+See the [middleware README](packages/middleware/README.md) for the full setup, options, and API.
+
+## Run it locally
+
+PAVEL uses [pnpm](https://pnpm.io) workspaces. With Node.js 24:
+
+```bash
+corepack pnpm install
+corepack pnpm test        # all packages
+corepack pnpm dev         # the example store at http://localhost:3000
+```
+
+Desktop browsers have no wallet, so the example store shows a labeled stand-in "dev wallet" that presents real signed test IDs and can trigger every outcome.
+
+To try it on a phone, the store must be reachable over HTTPS, for example through a temporary tunnel. Set `ORIGIN` to the public address so it matches what the phone's browser sees:
+
+```bash
+ORIGIN=https://your-tunnel.example corepack pnpm dev
+```
+
+On Android, install Google's [CMWallet](https://github.com/digitalcredentialsdev/CMWallet) test wallet; on iPhone, install Apple's free "Wallet Identity Developer" profile from Apple's developer profiles page.
 
 ## Testing
 
-PAVEL is designed to be verifiable **offline, on a single machine, with no external accounts or approvals**:
+- **127 automated tests** across the packages. They use real cryptography: a test issuer signs real test IDs, a test wallet presents them the way a phone would, and PAVEL verifies them with the same code a real site runs. Fixed test cases cover every outcome, and dedicated tests cover reused challenges, answers made for another site, untrusted issuers, and that PAVEL never asks for anything beyond the age question.
+- **Real phones:**
+  - *Android:* Chrome with Google's CMWallet test wallet on a physical phone: verified end to end.
+  - *iPhone:* Apple Wallet with Apple's developer profile accepted PAVEL's request, and PAVEL decrypted and read the response. Apple's simulated license has no issuer certificate, so PAVEL correctly rejects it as untrusted.
+  - *Safari:* the Multipaz test wallet presenting to Safari on an iPad: verified end to end.
+- **Real IDs:** real Iowa mobile driver's licenses in Google Wallet and Apple Wallet were refused by the wallets themselves, as expected for an unregistered site.
 
-- **Self-issued trust** — the Mock Authority Simulator acts as the root of trust, so the middleware verifies proofs against a key pair the project controls; no live DMV is contacted.
-- **Emulated wallet** — Google's open-source [CMWallet](https://digitalcredentials.dev/docs/samples/android-wallet-sample/) sample runs in an Android emulator as the credential holder, side-loaded with a mock mDL. This exercises the real `navigator.credentials.get()` → wallet-picker → consent → token flow without a physical device or real wallet credential.
-- **Sandbox parity** — Google's published Sandbox Mode test keys confirm the middleware behaves identically against pre-trusted, production-shaped metadata.
+## Accepting real IDs
 
-Registration as an approved relying party (production CSR, verification review) is required only to accept credentials from *real* consumer wallets — out of scope for this project. The delivered code is production-applicable the moment that step is completed.
+Google Wallet and Apple Wallet only release real state IDs to websites registered with them. Google approves verifiers individually; Apple requires a verified organization in an eligible category, such as licensed alcohol sales. PAVEL already includes what registration requires: signed requests and configurable reader certificates for both platforms (see the [middleware README](packages/middleware/README.md#accepting-real-ids)).
+
+Each site also chooses which issuers to trust by supplying their root certificates, usually one per state.
+
+## Privacy
+
+- The site learns only a yes/no for one age threshold, the document type, and the issuer's public certificate.
+- The issuing state is never contacted, and no personal data is sent anywhere for matching.
+- PAVEL can only ask for a single age field; its request builders accept nothing else.
+- **Limitation:** the same credential looks the same every time it's presented, so two cooperating sites could recognize the same user. Removing that requires zero-knowledge proofs (see the roadmap).
+
+## Roadmap
+
+Not yet done:
+
+- Publishing the packages to npm
+- A maintained default list of state root certificates (for example from AAMVA's Digital Trust Service), with an option to restrict it to specific states
+- Revocation checking (today PAVEL enforces validity dates only)
+- A shared store for single-use proofs across multiple server instances
+- Concurrent-load benchmarks
+- Zero-knowledge proofs for unlinkability, for example Google's [Longfellow-ZK](https://github.com/google/longfellow-zk)
+- Other eligibility facts beyond age, such as residency or student status
+
+## Docs
+
+- [Glossary](docs/GLOSSARY.md): the acronyms and terms used throughout
+- [Architecture](docs/ARCHITECTURE.md): the original design document
+- [Safari / ISO 18013-7 notes](docs/safari-org-iso-mdoc.md)
 
 ## License
 

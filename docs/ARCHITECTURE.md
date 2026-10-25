@@ -32,14 +32,14 @@
 
 - **Ergonomic integration.** A developer adds age-gating in ~2 lines of server code and ~1 SDK call in the browser. This developer-experience surface *is* the thesis contribution.
 - **Data minimization by construction.** The default request asks for a single boolean predicate (`age_over_NN`). It is not *possible* through the ergonomic API to accidentally request name, DOB, or address.
-- **Offline testability.** The whole system runs and is demonstrable on one machine with no external accounts, using a self-issued trust root (see [§13](#13-testing-architecture)).
+- **Offline testability.** The whole system runs and is demonstrable on one machine with no external accounts, using a self-issued trust root (see [Section 13](#13-testing-architecture)).
 - **Standards-first.** Build on the mechanisms that ship in stable browsers today (OpenID4VP over the DC API, ISO 18013-7 mdoc), not bespoke crypto.
 
 ### Non-Goals
 
 - **Not** a wallet or issuer. PAVEL is purely the *verifier / relying-party* side.
 - **Not** a production relying-party onboarding tool. Registration with Google/Apple (production CSR, review) is out of scope; PAVEL targets the sandbox + mock-authority path.
-- **Not** full zero-knowledge unlinkability in v1. Longfellow-ZK integration is a fenced stretch objective (see [§10.4](#104-known-limitation-linkability)).
+- **Not** full zero-knowledge unlinkability in v1. Longfellow-ZK integration is a fenced stretch objective (see [Section 10.4](#104-known-limitation-linkability)).
 - **Not** an identity/session framework. PAVEL grants a verified eligibility fact; the host app owns its own login/session semantics (PAVEL integrates with them).
 - **Not** an under-18 / minor age-assurance tool. PAVEL verifies *adult* eligibility from a **mobile driver's license** — a credential minors typically don't hold. It reliably keeps minors *out* of adult content by failing closed (no valid `age_over_NN` proof → no access), but it cannot *positively* verify that a user is a minor (e.g. "is at least 13"): there is no credential to read. Broad, minor-aware age assurance via declared-age or account/family signals — as in platform approaches like Google Play's Age Signals — is a different problem with a weaker, non-cryptographic trust model, and is out of scope. *(If an issuer offers minors a suitable mdoc, `-core`'s `docType` is configurable — but that ecosystem is nascent.)*
 
@@ -56,7 +56,7 @@ Four moving parts, from the phone to the server:
 | **DCQL** | *Digital Credentials Query Language* — the JSON query, inside the OpenID4VP request, that declares which credential and which claims are wanted. |
 | **mdoc (ISO 18013-5/-7)** | The CBOR credential *format* the wallet returns — a `DeviceResponse` containing issuer-signed data plus a device-signed proof of holder binding. An mDL (mobile driver's license) is an mdoc with `docType = org.iso.18013.5.1.mDL`. |
 
-**Selective disclosure** is the property that makes this private: the issuer signs a set of *salted hashes* of every attribute (in the MSO), but the wallet only reveals the specific attributes the verifier asked for. Requesting `age_over_21` returns one signed boolean; birthdate never leaves the device. See [§6](#6-the-response-mdoc-deviceresponse) for the mechanism.
+**Selective disclosure** is the property that makes this private: the issuer signs a set of *salted hashes* of every attribute (in the MSO), but the wallet only reveals the specific attributes the verifier asked for. Requesting `age_over_21` returns one signed boolean; birthdate never leaves the device. See [Section 6](#6-the-response-mdoc-deviceresponse) for the mechanism.
 
 Terms are defined in [GLOSSARY.md](GLOSSARY.md).
 
@@ -124,7 +124,7 @@ sequenceDiagram
     U->>W: approves
     W-->>P: vp_token (mdoc DeviceResponse, base64url)
     P->>S: POST /pavel/verify { vp_token }
-    S->>S: verify (see §7) against stored nonce + origin + trust anchors
+    S->>S: verify (see Section 7) against stored nonce + origin + trust anchors
     S->>S: on success, set session flag ageVerified=true
     S-->>P: 200 { ok: true }
     P->>S: (subsequent) GET /premium-content
@@ -132,7 +132,7 @@ sequenceDiagram
     S-->>P: protected content
 ```
 
-Note the two roles the middleware plays: (1) the **request/verify endpoints** that run the ceremony, and (2) the **`requireAgeProof` gate** that simply checks the resulting session flag on later requests. They are decoupled so the ceremony can happen once and gate many routes. (A gate can opt out of this caching with `forceReverify` to demand a fresh proof per action — see [§8](#8-public-api-design).)
+Note the two roles the middleware plays: (1) the **request/verify endpoints** that run the ceremony, and (2) the **`requireAgeProof` gate** that simply checks the resulting session flag on later requests. They are decoupled so the ceremony can happen once and gate many routes. (A gate can opt out of this caching with `forceReverify` to demand a fresh proof per action — see [Section 8](#8-public-api-design).)
 
 ---
 
@@ -206,7 +206,7 @@ Key MSO fields the verifier uses: `version`, `digestAlgorithm` (SHA-256), `docTy
 
 ## 7. The Verification Pipeline
 
-`@justinswork/pavel-core` runs these checks in order and **fails closed** on any failure. This ordering is derived from ISO 18013-5 §9 and the OpenID4VP DC API rules.
+`@justinswork/pavel-core` runs these checks in order and **fails closed** on any failure. This ordering is derived from clause 9 of ISO 18013-5 and the OpenID4VP DC API rules.
 
 ```mermaid
 flowchart TD
@@ -271,7 +271,7 @@ app.post("/checkout", requireAgeProof({ minAge: 21, forceReverify: true }), plac
 
 `requireAgeProof({ minAge })` checks the session flag; if absent it responds `401` with a machine-readable hint (`{ error: "age_verification_required", requestUrl: "/pavel/request?minAge=21" }`) that the SDK uses to kick off the ceremony. This keeps gating declarative and the ceremony lazy.
 
-**Verification lifetime.** By default a successful ceremony sets a session flag that satisfies later gates for the life of the session (*ceremony once → gate many*, [§4](#4-end-to-end-flow)). Some relying parties must instead re-verify on **every** gated action, regardless of a recent prior verification (per-transaction compliance postures). `forceReverify: true` makes the proof **one-shot**: it authorizes exactly the action it gates and is consumed once that action completes successfully, so the next gated request re-runs the ceremony. Default is `false`. A bounded-freshness middle ground — accept a proof issued within the last *N* minutes rather than all-or-nothing — is a planned `maxAge` option ([§14](#14-open-questions--risks)).
+**Verification lifetime.** By default a successful ceremony sets a session flag that satisfies later gates for the life of the session (*ceremony once → gate many*, [Section 4](#4-end-to-end-flow)). Some relying parties must instead re-verify on **every** gated action, regardless of a recent prior verification (per-transaction compliance postures). `forceReverify: true` makes the proof **one-shot**: it authorizes exactly the action it gates and is consumed once that action completes successfully, so the next gated request re-runs the ceremony. Default is `false`. A bounded-freshness middle ground — accept a proof issued within the last *N* minutes rather than all-or-nothing — is a planned `maxAge` option ([Section 14](#14-open-questions--risks)).
 
 ### Browser (`zk-age.js`)
 
@@ -312,8 +312,8 @@ Configuration is explicit and code-reviewed — there is no "trust everything" d
 | **Cross-site relay / phishing** (token obtained on attacker's site, replayed to ours, or vice-versa) | Expected **origin** bound into the request/handover and checked in step 6. |
 | **Forged / tampered credential** | Issuer `COSE_Sign1` over the MSO + digest-match of every disclosed item (steps 3, 7). |
 | **Copied credential** (exfiltrated from another device) | Device holder binding via `deviceAuth` (step 5). |
-| **Expired / revoked credential** | `validityInfo` window (step 4); revocation handling noted as an open question (§14). |
-| **Untrusted issuer** | IACA chain check (step 2); no implicit trust (§9). |
+| **Expired / revoked credential** | `validityInfo` window (step 4); revocation handling noted as an open question (Section 14). |
+| **Untrusted issuer** | IACA chain check (step 2); no implicit trust (Section 9). |
 | **Response eavesdropping** | TLS; optional `dc_api.jwt` response encryption to the verifier's key. |
 | **Over-collection by the developer** | Ergonomic API can only request a boolean predicate; no DOB path. |
 | **Session fixation** after verify | Rotate/regenerate session on successful verification. |
@@ -343,9 +343,9 @@ Plain mdoc selective disclosure reveals the **issuer's signature** (the document
 | Server | **Express** first, adapter pattern for others | Matches the proposal; `-core` stays framework-free. |
 | Sessions | Pluggable (`express-session` in the demo) | PAVEL records a flag; it does not own session storage. |
 | Build / mono-repo | pnpm workspaces + tsup/tsc | Lightweight; good for publishing several small packages. |
-| Tests | Vitest (unit) + a scripted emulator flow (integration) | See §13. |
+| Tests | Vitest (unit) + a scripted emulator flow (integration) | See Section 13. |
 
-> ✅ **Library resolved.** `-core` wraps **`@owf/mdoc`**, which builds the DC API `SessionTranscript` natively (`forOid4VpDcApi`) and takes its crypto from a caller-supplied `MdocContext`. It mints an mDL, presents a `DeviceResponse`, and verifies it end-to-end with only `age_over_21` disclosed, correctly rejecting wrong-origin, expired, untrusted-issuer, and tampered presentations — all locked in by golden-vector tests (§13). The residual risk is narrow: the exact handover byte layout for *real-wallet* interop, pinned in the integration tier (§14 #1).
+> ✅ **Library resolved.** `-core` wraps **`@owf/mdoc`**, which builds the DC API `SessionTranscript` natively (`forOid4VpDcApi`) and takes its crypto from a caller-supplied `MdocContext`. It mints an mDL, presents a `DeviceResponse`, and verifies it end-to-end with only `age_over_21` disclosed, correctly rejecting wrong-origin, expired, untrusted-issuer, and tampered presentations — all locked in by golden-vector tests (Section 13). The residual risk is narrow: the exact handover byte layout for *real-wallet* interop, pinned in the integration tier (Section 14, item 1).
 
 ---
 
@@ -402,7 +402,7 @@ Registration as an approved relying party (production CSR, review) is required o
 | 3 | **Protocol drift** — `openid4vp` vs `org-iso-mdoc`, response-mode encryption, DCQL revisions. | Chrome and Safari differ today; specs still moving. | **Both implemented:** Chrome via `openid4vp-v1-unsigned`, Safari via `org-iso-mdoc` (ISO 18013-7 Annex C, HPKE-encrypted) — see [safari-org-iso-mdoc.md](safari-org-iso-mdoc.md). ISO path confirmed on real Safari (green `verified` on iPad via Multipaz); only an iOS-native test credential remains. |
 | 4 | **`age_over_NN` availability** varies by issuer. | Requested predicate may not exist in a given credential. | Distinct `predicate_unavailable` outcome; never fall back to DOB. |
 | 5 | **Longfellow-ZK maturity** (C++, in security review, WASM binding cost). | Stretch objective feasibility. | Isolated behind the `-core` verifier interface; core deliverables don't depend on it. |
-| 6 | **Verification lifetime / freshness** — how long a proof gates for: per-session vs. per-action. | Some relying parties must re-verify at every transaction; others cache for the session. Neither should be hard-coded. | Default verify-once-per-session; `forceReverify` opt-in for one-shot per-action gating ([§8](#8-public-api-design)). Bounded-freshness `maxAge` window is a planned middle ground. |
+| 6 | **Verification lifetime / freshness** — how long a proof gates for: per-session vs. per-action. | Some relying parties must re-verify at every transaction; others cache for the session. Neither should be hard-coded. | Default verify-once-per-session; `forceReverify` opt-in for one-shot per-action gating ([Section 8](#8-public-api-design)). Bounded-freshness `maxAge` window is a planned middle ground. |
 
 ---
 

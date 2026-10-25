@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Framework-agnostic PAVEL logic: OpenID4VP/DCQL request building + the mdoc verification pipeline (ARCHITECTURE.md §5, §7).",
+  "description": "Framework-independent PAVEL verifier: builds the age request for each wallet protocol and verifies the wallet's signed answer.",
   "exports": {
     ".": {
       "types": "./src/index.ts",
