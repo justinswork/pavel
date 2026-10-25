@@ -1,4 +1,7 @@
-/** Minimal store catalog. Some items are age-restricted (trigger the gate at checkout). */
+/**
+ * Minimal store catalog. Some items are age-restricted (trigger the gate at checkout).
+ * Restricted items are listed last so on phones they sit just above the cart.
+ */
 
 export interface Product {
   id: string;
@@ -12,30 +15,6 @@ export interface Product {
 export const MIN_AGE = 21;
 
 export const CATALOG: Product[] = [
-  {
-    id: 'cab-sauv',
-    name: 'Reserve Cabernet Sauvignon',
-    blurb: 'Full-bodied red, oak-aged. 750ml.',
-    price: 24.0,
-    emoji: '🍷',
-    ageRestricted: true,
-  },
-  {
-    id: 'ipa-6pack',
-    name: 'Hazy IPA — 6 Pack',
-    blurb: 'Citrus-forward craft ale. 6 × 12oz.',
-    price: 13.5,
-    emoji: '🍺',
-    ageRestricted: true,
-  },
-  {
-    id: 'chef-knife',
-    name: "Chef's Kitchen Knife",
-    blurb: '8" high-carbon steel. Age-restricted blade.',
-    price: 49.0,
-    emoji: '🔪',
-    ageRestricted: true,
-  },
   {
     id: 'coffee',
     name: 'Single-Origin Coffee Beans',
@@ -59,6 +38,30 @@ export const CATALOG: Product[] = [
     price: 4.25,
     emoji: '🍫',
     ageRestricted: false,
+  },
+  {
+    id: 'chef-knife',
+    name: "Chef's Kitchen Knife",
+    blurb: '8" high-carbon steel. Age-restricted blade.',
+    price: 49.0,
+    emoji: '🔪',
+    ageRestricted: true,
+  },
+  {
+    id: 'ipa-6pack',
+    name: 'Hazy IPA — 6 Pack',
+    blurb: 'Citrus-forward craft ale. 6 × 12oz.',
+    price: 13.5,
+    emoji: '🍺',
+    ageRestricted: true,
+  },
+  {
+    id: 'cab-sauv',
+    name: 'Reserve Cabernet Sauvignon',
+    blurb: 'Full-bodied red, oak-aged. 750ml.',
+    price: 24.0,
+    emoji: '🍷',
+    ageRestricted: true,
   },
 ];
 
