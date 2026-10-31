@@ -51,20 +51,20 @@ See the [middleware README](packages/middleware/README.md) for the full setup, o
 
 ## Run it locally
 
-PAVEL uses [pnpm](https://pnpm.io) workspaces. With Node.js 24:
+PAVEL uses [pnpm](https://pnpm.io) workspaces. With Node.js 24 (if you don't have pnpm, run `corepack enable` first):
 
 ```bash
-corepack pnpm install
-corepack pnpm test        # all packages
-corepack pnpm dev         # the example store at http://localhost:3000
+pnpm install
+pnpm test        # all packages
+pnpm dev         # the example store at http://localhost:3000
 ```
 
-Desktop browsers have no wallet, so the example store shows a labeled stand-in "dev wallet" that presents real signed test IDs and can trigger every outcome.
+The store's age check needs a phone with an ID wallet; on a desktop browser without one, a 21+ checkout explains that the browser doesn't support digital IDs.
 
 To try it on a phone, the store must be reachable over HTTPS, for example through a temporary tunnel. Set `ORIGIN` to the public address so it matches what the phone's browser sees:
 
 ```bash
-ORIGIN=https://your-tunnel.example corepack pnpm dev
+ORIGIN=https://your-tunnel.example pnpm dev
 ```
 
 On Android, install Google's [CMWallet](https://github.com/digitalcredentialsdev/CMWallet) test wallet; on iPhone, install Apple's free "Wallet Identity Developer" profile from Apple's developer profiles page.
