@@ -49,6 +49,8 @@ Using that API directly is hard: several protocols, two encryption schemes, and 
 
 See the [middleware README](packages/middleware/README.md) for the full setup, options, and API.
 
+**Step-by-step example:** [pull request #1](https://github.com/justinswork/pavel/pull/1) adds PAVEL to the example store one commit at a time, the same steps a developer would take on their own site. [Pull request #2](https://github.com/justinswork/pavel/pull/2) then adds optional extras: a dev wallet for testing without a phone, a re-verify-every-checkout option, and the settings for accepting real IDs.
+
 ## Run it locally
 
 PAVEL uses [pnpm](https://pnpm.io) workspaces. With Node.js 24 (if you don't have pnpm, run `corepack enable` first):
