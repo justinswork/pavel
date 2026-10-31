@@ -7,6 +7,6 @@
   "scripts": {
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "dev": "pnpm --filter pavel-demo dev"
+    "dev": "pnpm --filter @justinswork/pavel-client build && pnpm --filter pavel-demo dev"
   }
 }

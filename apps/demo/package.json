@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@justinswork/pavel": "workspace:*",
+    "@justinswork/pavel-client": "workspace:*",
     "express": "^4.19.2",
     "express-session": "^1.18.0"
   },

@@ -1,4 +1,4 @@
-/** Store front-end: catalog, cart, and checkout. */
+/** Store front-end: catalog, cart, and the age-checked checkout. */
 (function () {
   'use strict';
 
@@ -68,7 +68,7 @@
     );
     cartTotalEl.textContent = money(view.total);
     checkoutBtn.disabled = view.items.length === 0;
-    checkoutBtn.textContent = 'Checkout →';
+    checkoutBtn.textContent = view.hasRestricted ? 'Checkout (age check) →' : 'Checkout →';
   }
 
   function msg(text, kind) {
@@ -87,16 +87,52 @@
 
   async function checkout() {
     msg('', null);
-    const res = await api('/api/checkout', { method: 'POST' });
+    const placeOrder = () => api('/api/checkout', { method: 'POST' });
+    let res = await placeOrder();
+    let ageChecked = false;
+
+    // The server says an age check is needed (and which age): run it, then try again.
+    if (res.status === 401 && res.body.error === 'age_verification_required') {
+      const { minAge } = res.body;
+      msg('Age verification required — opening wallet…', 'info');
+      const proof = await window.pavelClient.requestAgeProof({ minAge });
+      if (!proof.ok) {
+        msg(reasonText(proof.reason, minAge), 'error');
+        return;
+      }
+      ageChecked = true;
+      res = await placeOrder();
+    }
 
     if (res.status === 200 && res.body.ok) {
-      msg(`Order placed — ${res.body.itemCount} item(s), ${money(res.body.orderTotal)}.`, 'success');
+      msg(
+        `Order placed — ${res.body.itemCount} item(s), ${money(res.body.orderTotal)}.` +
+          (ageChecked ? ' No personal data was received.' : ''),
+        'success',
+      );
       const cart = await api('/api/cart');
       renderCart(cart.body);
     } else if (res.body.error === 'empty_cart') {
       msg('Your cart is empty.', 'error');
     } else {
       msg('Checkout failed.', 'error');
+    }
+  }
+
+  function reasonText(reason, minAge) {
+    switch (reason) {
+      case 'declined':
+        return 'You declined to share your age. Checkout cancelled.';
+      case 'unsupported':
+        return "This browser doesn't support digital IDs. Try Chrome on Android or Safari on iPhone.";
+      case 'predicate_false':
+        return `Your ID shows you are not over ${minAge}, so age-restricted items can't be purchased.`;
+      case 'predicate_unavailable':
+        return "That ID doesn't include the age information this store needs.";
+      case 'untrusted_issuer':
+        return "That ID is from an issuer this store doesn't accept.";
+      default:
+        return `Age verification failed (${reason}).`;
     }
   }
 

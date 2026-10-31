@@ -10,6 +10,12 @@ importers:
 
   apps/demo:
     dependencies:
+      '@justinswork/pavel':
+        specifier: workspace:*
+        version: link:../../packages/middleware
+      '@justinswork/pavel-client':
+        specifier: workspace:*
+        version: link:../../packages/client
       express:
         specifier: ^4.19.2
         version: 4.22.2
