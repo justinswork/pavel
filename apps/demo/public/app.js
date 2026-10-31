@@ -8,6 +8,7 @@
   const checkoutBtn = document.getElementById('checkout-btn');
   const clearBtn = document.getElementById('clear-btn');
   const checkoutMsg = document.getElementById('checkout-msg');
+  const reverifyToggle = document.getElementById('reverify-toggle');
 
   const money = (n) => `$${n.toFixed(2)}`;
 
@@ -87,7 +88,12 @@
 
   async function checkout() {
     msg('', null);
-    const placeOrder = () => api('/api/checkout', { method: 'POST' });
+    const placeOrder = () =>
+      api('/api/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ forceReverify: reverifyToggle.checked }),
+      });
     let res = await placeOrder();
     let ageChecked = false;
 
@@ -95,7 +101,7 @@
     if (res.status === 401 && res.body.error === 'age_verification_required') {
       const { minAge } = res.body;
       msg('Age verification required — opening wallet…', 'info');
-      const proof = await window.pavelClient.requestAgeProof({ minAge });
+      const proof = await runAgeCheck(minAge);
       if (!proof.ok) {
         msg(reasonText(proof.reason, minAge), 'error');
         return;
@@ -117,6 +123,22 @@
     } else {
       msg('Checkout failed.', 'error');
     }
+  }
+
+  /**
+   * Open the phone's wallet through PAVEL. If no wallet answered (for example, in a desktop
+   * browser) and the dev wallet is loaded, which it only is in development, use it instead.
+   */
+  async function runAgeCheck(minAge) {
+    let walletAnswered = false;
+    const proof = await window.pavelClient.requestAgeProof({
+      minAge,
+      onDiagnostic: (event) => {
+        if (event.stage === 'walletResponse') walletAnswered = true;
+      },
+    });
+    if (proof.ok || walletAnswered || !window.pavelDevWallet) return proof;
+    return window.pavelDevWallet.run({ minAge });
   }
 
   function reasonText(reason, minAge) {

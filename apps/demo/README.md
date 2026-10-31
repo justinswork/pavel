@@ -15,9 +15,19 @@ pnpm dev
 
 (If you don't have pnpm, run `corepack enable` first.) Then open `http://localhost:3000`. Set `PORT` to use a different port.
 
-## Trying the age check
+## On a desktop browser
 
-The age check needs a phone with an ID wallet. On a desktop browser without one, a 21+ checkout explains that the browser doesn't support digital IDs.
+Desktop browsers have no ID wallet, so in development, when no wallet answers, the store opens a clearly labeled stand-in **dev wallet**. It presents real, signed test IDs, so the real verifier still runs, and it has a button for each outcome:
+
+- **Present credential, over 21:** `verified`, and the order completes
+- **Present credential, under 21:** `predicate_false`
+- **Credential without this predicate:** `predicate_unavailable`
+- **Credential from untrusted issuer:** `untrusted_issuer`
+- **Cancel / decline sharing:** the check is cancelled
+
+The dev wallet is **off when `NODE_ENV=production`**. Its test issuer is trusted only in development, because otherwise it would let anyone pass the age check.
+
+## On a real phone
 
 The Digital Credentials API only works on secure (HTTPS) sites, so make the store reachable over HTTPS, for example with a temporary tunnel, and set `ORIGIN` to that address so it matches what the phone's browser sees:
 
@@ -34,7 +44,14 @@ ORIGIN=https://your-tunnel.example pnpm dev
 |---|---|
 | `PORT` | Port to listen on (default `3000`). |
 | `ORIGIN` | The public address the store is reached at (default `http://localhost:<PORT>`). |
+| `NODE_ENV=production` | Turns off the dev wallet and its test issuer. |
 | `trust-anchors/*.pem` | The ID issuers the store accepts. Ships with the CMWallet and Multipaz test issuers; see [trust-anchors/README.md](trust-anchors/README.md). |
+| `GW_RP_METADATA_BYTES` | Turns on Google Wallet's signed request (for Google's sandbox or a registered site). |
+| `.apple-reader/reader-key.pem` + `reader-cert.pem` | Turns on signed requests for Apple Wallet, using a certificate Apple issued you. Never commit these; the folder is in `.gitignore`. |
+
+## Re-verifying at every checkout
+
+By default, a successful check is remembered for the rest of the session. The cart's **"Re-verify age at every checkout"** checkbox switches the checkout guard to `requireAgeProof({ minAge: 21, forceReverify: true })`, so every purchase needs a fresh check. A real store would choose one policy; the checkbox lets you compare both.
 
 ## Routes
 
@@ -45,3 +62,4 @@ ORIGIN=https://your-tunnel.example pnpm dev
 | `GET /api/catalog` | The products |
 | `GET`/`POST /api/cart`, `POST /api/cart/clear` | The session cart |
 | `GET /pavel-client.js` | PAVEL's browser script |
+| `POST /dev-wallet/present`, `GET /dev/dev-wallet.js` | Development only: the dev wallet |

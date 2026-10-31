@@ -12,6 +12,8 @@
   "dependencies": {
     "@justinswork/pavel": "workspace:*",
     "@justinswork/pavel-client": "workspace:*",
+    "@justinswork/pavel-core": "workspace:*",
+    "@justinswork/pavel-mock-authority": "workspace:*",
     "express": "^4.19.2",
     "express-session": "^1.18.0"
   },

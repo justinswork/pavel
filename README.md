@@ -59,7 +59,7 @@ pnpm test        # all packages
 pnpm dev         # the example store at http://localhost:3000
 ```
 
-The store's age check needs a phone with an ID wallet; on a desktop browser without one, a 21+ checkout explains that the browser doesn't support digital IDs.
+Desktop browsers have no wallet, so the example store shows a labeled stand-in "dev wallet" that presents real signed test IDs and can trigger every outcome.
 
 To try it on a phone, the store must be reachable over HTTPS, for example through a temporary tunnel. Set `ORIGIN` to the public address so it matches what the phone's browser sees:
 
